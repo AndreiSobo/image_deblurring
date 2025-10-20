@@ -20,6 +20,10 @@ The website for the webapp is: https://ashy-ocean-05d988603.3.azurestaticapps.ne
 - **Backend**: Azure Functions (Python) - *To be implemented*
 - **Convolutional Neural Network Model**: CNN for image deblurring - *To be integrated*
 
+## Resources
+https://ashy-ocean-05d988603.3.azurestaticapps.net/ - static webpage
+https://seungjunnah.github.io/Datasets/gopro.html - GoPro dataset and link to implementation
+
 
 ## License
 
