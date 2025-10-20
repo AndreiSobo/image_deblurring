@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Deblurring Application</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:,">
+</head>
+
+<body>
+    <div class="container-fluid px-3 py-4">
+        <div class="row mb-4">
+            <div class="col-12 text-center">
+                <h1 class="display-6 display-md-4">Image Deblurring Application</h1>
+                <p class="lead">AI-powered image deblurring using deep learning</p>
+                <div class="hero-icon">📸</div>
+            </div>
+        </div>
+
+        <!-- Project Information Cards -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="info-cards-container">
+                    <!-- What Card -->
+                    <div class="info-card" id="what-card">
+                        <div class="info-card-header" onclick="toggleInfoCard('what')" tabindex="0" role="button"
+                            aria-expanded="false">
+                            <span class="info-card-title">💡 What</span>
+                            <span class="info-card-arrow" id="what-arrow">▼</span>
+                        </div>
+                        <div class="info-card-body" id="what-body" style="display: none;">
+                            <h6>What This Project Does</h6>
+                            <p>This project demonstrates advanced computer vision techniques for image deblurring using
+                                deep learning models deployed on Azure cloud infrastructure. It automatically removes
+                                blur from images caused by motion, defocus, or other distortions.</p>
+                            <ul>
+                                <li><strong>AI-Powered Deblurring:</strong> Advanced CNN models for blur removal</li>
+                                <li><strong>Real-time Processing:</strong> Fast image enhancement in the cloud</li>
+                                <li><strong>Multiple Blur Types:</strong> Handles motion blur, defocus blur, and mixed
+                                    distortions</li>
+                                <li><strong>High-Quality Results:</strong> Preserves image details while removing blur
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- How Card -->
+                    <div class="info-card" id="how-card">
+                        <div class="info-card-header" onclick="toggleInfoCard('how')" tabindex="0" role="button"
+                            aria-expanded="false">
+                            <span class="info-card-title">⚙️ How</span>
+                            <span class="info-card-arrow" id="how-arrow">▼</span>
+                        </div>
+                        <div class="info-card-body" id="how-body" style="display: none;">
+                            <h6>How It Works - Technical Implementation</h6>
+                            <p><strong>Deep Learning Pipeline:</strong></p>
+                            <p class="text-center mb-3"><em>Image Upload → Preprocessing → CNN Model → Post-processing
+                                    → Enhanced Image</em></p>
+                            <p>This application uses a <strong>Convolutional Neural Network (CNN)</strong> trained on
+                                pairs of blurred and sharp images to learn the deblurring transformation.</p>
+                            <ol>
+                                <li><strong>Image Upload:</strong> User uploads a blurred image via the web interface
+                                </li>
+                                <li><strong>Preprocessing:</strong> Image is resized and normalized for model input</li>
+                                <li><strong>Model Inference:</strong> Deep learning model processes the image</li>
+                                <li><strong>Post-processing:</strong> Result is enhanced and formatted for display</li>
+                                <li><strong>Comparison View:</strong> Side-by-side display of original and deblurred
+                                    images</li>
+                            </ol>
+                            <p><strong>Architecture:</strong> Multi-layer CNN with skip connections, batch normalization,
+                                and attention mechanisms for optimal deblurring performance.</p>
+                        </div>
+                    </div>
+
+                    <!-- Why Card -->
+                    <div class="info-card" id="why-card">
+                        <div class="info-card-header" onclick="toggleInfoCard('why')" tabindex="0" role="button"
+                            aria-expanded="false">
+                            <span class="info-card-title">🎯 Why</span>
+                            <span class="info-card-arrow" id="why-arrow">▼</span>
+                        </div>
+                        <div class="info-card-body" id="why-body" style="display: none;">
+                            <h6>Why This Project Matters</h6>
+                            <p>This project showcases <strong>computer vision expertise</strong>, <strong>deep learning
+                                    implementation</strong>, and <strong>cloud deployment capabilities</strong> for
+                                real-world image enhancement applications.</p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-primary">🔬 Computer Vision</h6>
+                                    <ul>
+                                        <li>Advanced CNN architectures</li>
+                                        <li>Image processing pipelines</li>
+                                        <li>Quality assessment metrics</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-primary">☁️ Cloud Integration</h6>
+                                    <ul>
+                                        <li>Azure Static Web Apps hosting</li>
+                                        <li>Serverless model inference</li>
+                                        <li>Scalable image processing</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <p><strong>Real-World Applications:</strong> Photography enhancement, medical imaging,
+                                surveillance systems, and autonomous vehicle perception systems.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Application -->
+        <div class="row">
+            <div class="col-xl-8 offset-xl-2 col-lg-10 offset-lg-1 col-md-12">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Image Deblurring Tool</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Upload Section -->
+                        <div class="upload-section mb-4">
+                            <h6 class="mb-3">📁 Upload Your Blurred Image</h6>
+                            <div class="upload-area" id="upload-area">
+                                <div class="upload-content">
+                                    <div class="upload-icon">📷</div>
+                                    <h4>Drag & Drop Image Here</h4>
+                                    <p>or click to browse files</p>
+                                    <div class="supported-formats">
+                                        <small>Supported formats: JPG, PNG, WebP (max 10MB)</small>
+                                    </div>
+                                </div>
+                                <input type="file" id="image-upload" accept="image/*" hidden>
+                            </div>
+                        </div>
+
+                        <!-- Preview Section -->
+                        <div class="preview-section mb-4" id="preview-section" style="display: none;">
+                            <h6 class="mb-3">🖼️ Image Preview</h6>
+                            <div class="image-preview-container">
+                                <div class="image-preview">
+                                    <img id="preview-image" src="" alt="Preview" class="img-fluid">
+                                    <div class="image-info" id="image-info"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="action-buttons mb-4" id="action-buttons" style="display: none;">
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                                <button id="deblur-btn" class="btn btn-success btn-lg" type="button">
+                                    🔧 Deblur Image
+                                </button>
+                                <button id="clear-btn" class="btn btn-outline-secondary btn-lg" type="button">
+                                    🗑️ Clear Image
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Processing Indicator -->
+                        <div id="processing" class="text-center my-4" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Processing...</span>
+                            </div>
+                            <p class="mt-2">Processing your image, please wait...</p>
+                            <div class="progress mt-3">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: 0%" id="progress-bar"></div>
+                            </div>
+                        </div>
+
+                        <!-- Results Section -->
+                        <div class="results-section" id="results-section" style="display: none;">
+                            <h6 class="mb-3">✨ Deblurring Results</h6>
+                            <div class="results-container">
+                                <div class="comparison-view">
+                                    <div class="image-comparison">
+                                        <div class="comparison-item">
+                                            <h6>Original (Blurred)</h6>
+                                            <img id="original-result" src="" alt="Original" class="img-fluid">
+                                        </div>
+                                        <div class="comparison-arrow">→</div>
+                                        <div class="comparison-item">
+                                            <h6>Enhanced (Deblurred)</h6>
+                                            <img id="deblurred-result" src="" alt="Deblurred" class="img-fluid">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="results-actions mt-3">
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                                        <button id="download-btn" class="btn btn-primary" type="button">
+                                            💾 Download Enhanced Image
+                                        </button>
+                                        <button id="new-image-btn" class="btn btn-outline-primary" type="button">
+                                            🆕 Process New Image
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Messages -->
+                        <div class="status-container" id="status-container">
+                            <div id="status-message" class="h4 text-center text-muted">Upload an image to get started</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

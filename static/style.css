@@ -1,0 +1,620 @@
+/* ==========================================================================
+   Mobile-First Responsive Design for Image Deblurring Static Web App
+   ========================================================================== */
+
+/* Base styles for mobile devices (320px+) */
+:root {
+    --primary-color: #2196f3;
+    --success-color: #4caf50;
+    --warning-color: #ff9800;
+    --danger-color: #f44336;
+    --info-color: #00bcd4;
+    --light-gray: #f8f9fa;
+    --dark-gray: #6c757d;
+    --border-radius: 8px;
+    --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --transition: all 0.3s ease;
+    --upload-border: #ddd;
+    --upload-hover: #e3f2fd;
+}
+
+/* Mobile-first base styles */
+body {
+    font-size: 16px;
+    line-height: 1.5;
+    padding: 0;
+    margin: 0;
+    background-color: #f8f9fa;
+}
+
+.container-fluid {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* Typography - Mobile optimized */
+h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+}
+
+.lead {
+    font-size: 1.1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Hero Icon */
+.hero-icon {
+    font-size: 3rem;
+    margin-top: 1rem;
+}
+
+/* Card layout - Mobile first */
+.card {
+    border: none;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    margin-bottom: 2rem;
+}
+
+.card-header {
+    padding: 1rem;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+/* ==========================================================================
+   Info Cards Styles (Reused from web_app)
+   ========================================================================== */
+
+/* Info Cards Container */
+.info-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+/* Individual Info Card */
+.info-card {
+    border: 1px solid #e0e0e0;
+    border-radius: var(--border-radius);
+    background: white;
+    overflow: hidden;
+    transition: var(--transition);
+    box-shadow: var(--box-shadow);
+}
+
+.info-card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Info Card Header - Clickable trigger */
+.info-card-header {
+    padding: 1rem;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: var(--transition);
+    border-bottom: 1px solid #e0e0e0;
+    min-height: 48px;
+}
+
+.info-card-header:hover {
+    background: linear-gradient(135deg, #e9ecef, #dee2e6);
+}
+
+.info-card-title {
+    font-weight: 600;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.info-card-arrow {
+    font-size: 1.2rem;
+    color: var(--primary-color);
+    transition: transform 0.3s ease;
+    font-weight: bold;
+}
+
+/* Info Card Body - Collapsible content */
+.info-card-body {
+    padding: 1.5rem;
+    background: white;
+    border-top: 1px solid #f0f0f0;
+    color: #333333;
+}
+
+.info-card-body h6 {
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.info-card-body p {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #333333;
+    margin-bottom: 1rem;
+}
+
+.info-card-body ul {
+    margin-bottom: 1rem;
+    color: #333333;
+}
+
+.info-card-body li {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #333333;
+}
+
+.info-card-body ol {
+    margin-bottom: 1rem;
+    color: #333333;
+}
+
+.info-card-body ol li {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #333333;
+}
+
+.info-card-body strong {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   Upload Area Styles
+   ========================================================================== */
+
+.upload-section {
+    margin-bottom: 2rem;
+}
+
+.upload-area {
+    border: 3px dashed var(--upload-border);
+    border-radius: var(--border-radius);
+    padding: 2rem 1rem;
+    text-align: center;
+    background: white;
+    transition: var(--transition);
+    cursor: pointer;
+    position: relative;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.upload-area:hover {
+    border-color: var(--primary-color);
+    background: var(--upload-hover);
+}
+
+.upload-area.dragover {
+    border-color: var(--success-color);
+    background: #e8f5e8;
+}
+
+.upload-content {
+    pointer-events: none;
+}
+
+.upload-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    color: var(--dark-gray);
+}
+
+.upload-area h4 {
+    color: var(--dark-gray);
+    margin-bottom: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.upload-area p {
+    color: var(--dark-gray);
+    margin-bottom: 1rem;
+    font-size: 1rem;
+}
+
+.supported-formats {
+    color: var(--dark-gray);
+    font-size: 0.875rem;
+}
+
+/* ==========================================================================
+   Image Preview Styles
+   ========================================================================== */
+
+.preview-section {
+    margin-bottom: 2rem;
+}
+
+.image-preview-container {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    box-shadow: var(--box-shadow);
+}
+
+.image-preview {
+    text-align: center;
+    position: relative;
+}
+
+.image-preview img {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.image-info {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--light-gray);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: var(--dark-gray);
+}
+
+/* ==========================================================================
+   Action Buttons Styles
+   ========================================================================== */
+
+.action-buttons {
+    margin-bottom: 2rem;
+}
+
+.btn {
+    min-height: 48px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: none;
+    transition: var(--transition);
+    cursor: pointer;
+    text-align: center;
+    display: inline-block;
+}
+
+.btn-success {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.btn-success:hover,
+.btn-success:focus {
+    background-color: #45a049;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: #1976d2;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+}
+
+.btn-outline-secondary {
+    background-color: transparent;
+    color: var(--dark-gray);
+    border: 2px solid var(--dark-gray);
+}
+
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus {
+    background-color: var(--dark-gray);
+    color: white;
+}
+
+.btn-outline-primary {
+    background-color: transparent;
+    color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* ==========================================================================
+   Processing Indicator Styles
+   ========================================================================== */
+
+#processing {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 2rem 1rem;
+    box-shadow: var(--box-shadow);
+}
+
+.spinner-border {
+    width: 2rem;
+    height: 2rem;
+    margin-bottom: 1rem;
+}
+
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.progress-bar {
+    border-radius: 4px;
+}
+
+/* ==========================================================================
+   Results Section Styles
+   ========================================================================== */
+
+.results-section {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    box-shadow: var(--box-shadow);
+}
+
+.comparison-view {
+    margin-bottom: 2rem;
+}
+
+.image-comparison {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.comparison-item {
+    flex: 1;
+    text-align: center;
+}
+
+.comparison-item h6 {
+    margin-bottom: 0.75rem;
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.comparison-item img {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.comparison-arrow {
+    font-size: 2rem;
+    color: var(--primary-color);
+    font-weight: bold;
+    transform: rotate(90deg);
+}
+
+/* ==========================================================================
+   Status Container Styles
+   ========================================================================== */
+
+.status-container {
+    min-height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    text-align: center;
+}
+
+/* ==========================================================================
+   Alert Styles
+   ========================================================================== */
+
+.alert {
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 1rem;
+    border: none;
+}
+
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+    border-left: 4px solid var(--success-color);
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    color: #856404;
+    border-left: 4px solid var(--warning-color);
+}
+
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+    border-left: 4px solid var(--danger-color);
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    border-left: 4px solid var(--info-color);
+}
+
+/* ==========================================================================
+   Tablet styles (768px and up)
+   ========================================================================== */
+@media (min-width: 768px) {
+    /* Typography scaling */
+    h1 {
+        font-size: 2.5rem;
+    }
+
+    .lead {
+        font-size: 1.25rem;
+    }
+
+    /* Container adjustments */
+    .container-fluid {
+        padding-left: 30px;
+        padding-right: 30px;
+    }
+
+    /* Info Cards - Tablet layout */
+    .info-cards-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    /* Card body spacing */
+    .card-body {
+        padding: 2rem;
+    }
+
+    /* Upload area larger */
+    .upload-area {
+        min-height: 250px;
+        padding: 3rem 2rem;
+    }
+
+    /* Image comparison - side by side */
+    .image-comparison {
+        flex-direction: row;
+        gap: 2rem;
+    }
+
+    .comparison-arrow {
+        transform: rotate(0deg);
+        align-self: center;
+    }
+
+    .comparison-item img {
+        max-height: 400px;
+    }
+
+    /* Button sizing */
+    .btn {
+        min-width: 150px;
+    }
+}
+
+/* ==========================================================================
+   Desktop styles (992px and up)
+   ========================================================================== */
+@media (min-width: 992px) {
+    /* Typography scaling */
+    h1 {
+        font-size: 3rem;
+    }
+
+    /* Upload area larger */
+    .upload-area {
+        min-height: 300px;
+        padding: 4rem 3rem;
+    }
+
+    /* Image comparison larger */
+    .comparison-item img {
+        max-height: 500px;
+    }
+
+    /* Hover effects more pronounced on desktop */
+    .upload-area:hover {
+        transform: translateY(-2px);
+    }
+
+    .btn:hover {
+        transform: translateY(-2px);
+    }
+}
+
+/* ==========================================================================
+   Large desktop styles (1200px and up)
+   ========================================================================== */
+@media (min-width: 1200px) {
+    .container-fluid {
+        padding-left: 50px;
+        padding-right: 50px;
+    }
+
+    .card-body {
+        padding: 3rem;
+    }
+}
+
+/* ==========================================================================
+   Accessibility and interaction improvements
+   ========================================================================== */
+
+/* Focus indicators */
+*:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    :root {
+        --primary-color: #0066cc;
+        --success-color: #006600;
+        --danger-color: #cc0000;
+        --border-radius: 4px;
+    }
+
+    .upload-area {
+        border-width: 2px;
+    }
+
+    .btn {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Print styles */
+@media print {
+    .upload-section,
+    .action-buttons,
+    #processing {
+        display: none !important;
+    }
+
+    .results-section {
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+}
