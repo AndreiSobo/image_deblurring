@@ -1,0 +1,41 @@
+{
+    "routes": [
+        {
+            "route": "/static/*",
+            "headers": {
+                "cache-control": "public, max-age=86400"
+            }
+        },
+        {
+            "route": "/*",
+            "rewrite": "/static/index.html",
+            "statusCode": 200
+        }
+    ],
+    "navigationFallback": {
+        "rewrite": "/static/index.html",
+        "exclude": [
+            "/images/*.{png,jpg,gif}",
+            "/static/*",
+            "/api/*"
+        ]
+    },
+    "responseOverrides": {
+        "404": {
+            "rewrite": "/static/index.html",
+            "statusCode": 200
+        }
+    },
+    "platform": {
+        "apiRuntime": "python:3.10"
+    },
+    "globalHeaders": {
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: blob:;",
+        "Access-Control-Allow-Origin": "https://example.com",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-XSS-Protection": "1; mode=block"
+    }
+}
