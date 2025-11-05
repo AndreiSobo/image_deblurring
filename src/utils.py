@@ -2,7 +2,7 @@
 
 import random
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 
 from PIL import Image
 import numpy as np
