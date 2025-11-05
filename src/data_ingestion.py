@@ -1,7 +1,6 @@
 from torch.utils.data import Dataset, DataLoader
 import logging
 import os
-import re
 from PIL import Image
 
 class DeblurDataset(Dataset):
@@ -10,8 +9,8 @@ class DeblurDataset(Dataset):
         self.transform = transform
         
         # Log the initial directory
-        logging.info(f"Initializing DeblurDataset with data directory: {self.data_dir}")
-        print(f"Initializing DeblurDataset with data directory: {self.data_dir}")
+        logging.info(f"Initializing GoPro dataset with data directory: {self.data_dir}")
+        print(f"Initializing GoPro dataset with data directory: {self.data_dir}")
         
         self.image_pairs = self._get_image_pairs()
         
@@ -25,54 +24,49 @@ class DeblurDataset(Dataset):
         logging.info(f"Searching for image pairs in: {self.data_dir}")
         print(f"Searching for image pairs in: {self.data_dir}")
 
-        blurred_dir = os.path.join(self.data_dir, 'blurred')
-        sharp_dir = os.path.join(self.data_dir, 'sharp')
+        # GoPro dataset structure: data_dir contains sequence folders (e.g., GOPR0372_07_00)
+        # Each sequence folder contains 'blur' and 'sharp' subdirectories
         
-        # Log and print directory checks
-        logging.info(f"Checking if 'blurred' directory exists: {blurred_dir}")
-        print(f"Checking if 'blurred' directory exists: {blurred_dir}")
-        logging.info(f"Checking if 'sharp' directory exists: {sharp_dir}")
-        print(f"Checking if 'sharp' directory exists: {sharp_dir}")
-        
-        if not os.path.exists(blurred_dir) or not os.path.exists(sharp_dir):
-            logging.error(f"'blurred' or 'sharp' directory not found in {self.data_dir}")
-            print(f"'blurred' or 'sharp' directory not found in {self.data_dir}")
+        if not os.path.exists(self.data_dir):
+            logging.error(f"Data directory not found: {self.data_dir}")
+            print(f"Data directory not found: {self.data_dir}")
             return image_pairs
-
-        blurred_files = os.listdir(blurred_dir)
-        logging.info(f"Found {len(blurred_files)} files in blurred directory: {blurred_dir}")
-        print(f"Found {len(blurred_files)} files in blurred directory: {blurred_dir}")
         
-        # Collect all sharp filenames for quick lookup
-        sharp_filenames = [filename for filename in os.listdir(sharp_dir) if filename.endswith('.png')]
-        sharp_filename_set = set(sharp_filenames)  # To speed up lookup
-
-        for filename in blurred_files:
-            if filename.endswith('.png'):
-                blur_path = os.path.join(blurred_dir, filename)
-
-                # Attempt to match filenames with regex (for augmentation suffixes)
-                sharp_filename_with_suffix = re.sub(r'(_flip|_rotate)', r'_gt\1', filename)
-                sharp_path_with_suffix = os.path.join(sharp_dir, sharp_filename_with_suffix)
+        # Get all sequence folders in the data directory
+        sequence_folders = [f for f in os.listdir(self.data_dir) 
+                          if os.path.isdir(os.path.join(self.data_dir, f)) and f.startswith('GOPR')]
+        
+        logging.info(f"Found {len(sequence_folders)} sequence folders")
+        print(f"Found {len(sequence_folders)} sequence folders")
+        
+        # Iterate through each sequence folder
+        for seq_folder in sequence_folders:
+            seq_path = os.path.join(self.data_dir, seq_folder)
+            blur_dir = os.path.join(seq_path, 'blur')
+            sharp_dir = os.path.join(seq_path, 'sharp')
+            
+            # Check if both blur and sharp directories exist
+            if not os.path.exists(blur_dir) or not os.path.exists(sharp_dir):
+                logging.warning(f"Missing 'blur' or 'sharp' directory in {seq_folder}")
+                print(f"Missing 'blur' or 'sharp' directory in {seq_folder}")
+                continue
+            
+            # Get all blur images
+            blur_files = sorted([f for f in os.listdir(blur_dir) if f.endswith('.png')])
+            logging.info(f"Found {len(blur_files)} blur images in {seq_folder}")
+            print(f"Found {len(blur_files)} blur images in {seq_folder}")
+            
+            # Match blur and sharp images with the same filename
+            for blur_filename in blur_files:
+                blur_path = os.path.join(blur_dir, blur_filename)
+                sharp_path = os.path.join(sharp_dir, blur_filename)
                 
-                # Check if sharp image exists with regex-based name
-                if os.path.exists(sharp_path_with_suffix):
-                    image_pairs.append((blur_path, sharp_path_with_suffix))
-                    logging.info(f"Valid image pair with suffix: {blur_path} and {sharp_path_with_suffix}")
-                    print(f"Valid image pair with suffix: {blur_path} and {sharp_path_with_suffix}")
+                # Check if corresponding sharp image exists
+                if os.path.exists(sharp_path):
+                    image_pairs.append((blur_path, sharp_path))
                 else:
-                    # Check if sharp image exists with direct '_gt' match
-                    base_filename = re.sub(r'_flip|_rotate', '', filename)
-                    sharp_filename_direct = f"{base_filename[:-4]}_gt.png"  # Remove .png and add _gt.png
-                    sharp_path_direct = os.path.join(sharp_dir, sharp_filename_direct)
-                    
-                    if os.path.exists(sharp_path_direct):
-                        image_pairs.append((blur_path, sharp_path_direct))
-                        logging.info(f"Valid image pair with direct match: {blur_path} and {sharp_path_direct}")
-                        print(f"Valid image pair with direct match: {blur_path} and {sharp_path_direct}")
-                    else:
-                        logging.warning(f"No matching sharp image for {filename}")
-                        print(f"No matching sharp image for {filename}")
+                    logging.warning(f"No matching sharp image for {blur_path}")
+                    print(f"No matching sharp image for {blur_path}")
         
         logging.info(f"Found {len(image_pairs)} valid image pairs")
         print(f"Found {len(image_pairs)} valid image pairs")
@@ -83,9 +77,9 @@ class DeblurDataset(Dataset):
 
     def __getitem__(self, idx):
         blur_path, sharp_path = self.image_pairs[idx]
-        # blur_img = Image.open(blur_path).convert('RGB')
-        blur_img = Image.open(blur_path).convert('L')
-        sharp_img = Image.open(sharp_path).convert('L')
+        # blur_img = Image.open(blur_path).convert('L')  # for monochrome
+        blur_img = Image.open(blur_path).convert('RGB')
+        sharp_img = Image.open(sharp_path).convert('RGB')
         
         if self.transform:
             blur_img = self.transform(blur_img)
