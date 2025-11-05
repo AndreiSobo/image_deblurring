@@ -1,6 +1,5 @@
 # file with all the utility methods. Used to promote decoupling and Object Oriented Programming principles.
 
-import os
 import random
 from pathlib import Path
 from typing import Tuple, List, Optional
