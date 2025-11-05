@@ -237,7 +237,7 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
             tile = tile.squeeze(0)
         
         # Create blend weight map with linear feathering
-        tile_h, tile_w = tile.shape[1], tile.shape[2]
+        tile_h, tile_w = tile.shape[-2], tile.shape[-1]
         tile_weight = create_blend_weight(tile_h, tile_w, overlap)
         tile_weight = tile_weight.to(tile.device)
         
