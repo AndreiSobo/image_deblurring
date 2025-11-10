@@ -3,4 +3,4 @@ virtual_env/*
 __pycache__/
 data/*
 mlruns/
-checkpoint/
+checkpoints/
