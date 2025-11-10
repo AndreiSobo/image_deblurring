@@ -43,7 +43,7 @@ class DeblurUNet(nn.Module):
         self.enc1 = ConvBlock(in_ch, base_ch, norm=norm)
         self.enc2 = ConvBlock(base_ch, base_ch*2, norm=norm)
         self.enc3 = ConvBlock(base_ch*2, base_ch*4, norm=norm)
-        self.enc4 = ConvBlock(base_ch*4, base_ch*8, norm=norm)
+        self.enc4 = ConvBlock(base_ch*4, base_ch*8, norm=norm)        
         self.pool = nn.MaxPool2d(2,2)
 
         self.bottleneck = ConvBlock(base_ch*8, base_ch*16, norm=norm)
@@ -62,12 +62,11 @@ class DeblurUNet(nn.Module):
         e4 = self.enc4(self.pool(e3))
 
         b = self.bottleneck(self.pool(e4))
-
+        
         d4 = self.up4(b, e4)
         d3 = self.up3(d4, e3)
         d2 = self.up2(d3, e2)
         d1 = self.up1(d2, e1)
 
         out = self.final(d1)
-        # prefer no final activation here; training loss expects same scale as target
         return out

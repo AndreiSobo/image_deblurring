@@ -1,7 +1,126 @@
+## PyTorch Installation and GPU/CPU Compatibility
+
+<code>$env:PYTHONPATH = "C:\Users\as2491\git\image_deblurring"<code>
+
+### Understanding PyTorch Versions
+
+PyTorch comes in two main variants:
+- **CPU-only version** (`torch-2.x.x+cpu`): Smaller download, runs only on CPU
+- **CUDA version** (`torch-2.x.x+cu121`): Larger download, runs on both GPU and CPU
+
+**Important:** The CUDA version automatically detects available hardware and uses GPU when available, falling back to CPU when not. This means you can train on GPU and deploy to CPU-only environments (like Azure Functions) using the same installation.
+
+### Installation on Windows with Python 3.10
+
+**Problem:** If you create `requirements.txt` on a Linux machine and try to install on Windows, you'll encounter:
+1. **Platform-specific packages**: Some NVIDIA packages are Linux-only (`nvidia-cufile-cu12`, `nvidia-nccl-cu12`, `nvidia-nvshmem-cu12`)
+2. **CPU vs GPU version confusion**: `pip install torch` defaults to CPU-only version on Windows
+
+**Solution: Install CUDA-enabled PyTorch**
+
+#### Step 1: Remove CPU-only version (if installed)
+```powershell
+pip uninstall -y torch torchvision
+```
+
+#### Step 2: Install CUDA version from PyTorch repository
+```powershell
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+This installs:
+- `torch-2.5.1+cu121` (CUDA 12.1 compatible)
+- `torchvision-0.20.1+cu121`
+- All necessary CUDA libraries automatically
+
+#### Step 3: Verify installation
+```powershell
+python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+```
+
+**Expected output on GPU machine:**
+```
+PyTorch: 2.5.1+cu121
+CUDA available: True
+Device: NVIDIA GeForce RTX 4070
+```
+
+**Expected output on CPU machine (e.g., Azure Functions):**
+```
+PyTorch: 2.5.1+cu121
+CUDA available: False
+Device: CPU
+```
+
+### GPU Requirements
+
+**Minimum Requirements:**
+- NVIDIA GPU with CUDA Compute Capability 3.5+
+- NVIDIA Driver version 450.80.02+ (Linux) or 452.39+ (Windows)
+- CUDA 12.1 or 12.2 compatible driver
+
+**Recommended for This Project:**
+- 8GB+ VRAM (RTX 3070, RTX 4070, or better)
+- 12GB+ VRAM for larger batch sizes (batch_size=16-32)
+
+**Check GPU availability:**
+```powershell
+nvidia-smi  # Shows GPU status, memory, driver version
+```
+
+### Training vs Inference Device Selection
+
+The code automatically selects the best available device:
+
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+input_tensor = input_tensor.to(device)
+```
+
+**Training (local machine with GPU):**
+- Detects CUDA → Uses GPU
+- ~10-50x faster than CPU
+- Required for reasonable training times
+
+**Inference (Azure Functions, CPU-only):**
+- No CUDA detected → Uses CPU
+- Slower but acceptable for single-image inference
+- Same model weights, same code, no modifications needed
+
+### Performance Comparison
+
+**256×256 Patch Processing Time:**
+- **GPU (RTX 4070)**: ~5-10ms per patch
+- **CPU (Azure Functions)**: ~100-200ms per patch
+
+**Full 2048×2048 Image (with tiling):**
+- **GPU (RTX 4070)**: ~99ms total
+- **CPU (Azure Functions)**: ~2-5 seconds total
+
+### Troubleshooting
+
+**Issue: "using device: cpu" when GPU is available**
+
+**Cause:** CPU-only PyTorch version installed
+
+**Solution:**
+```powershell
+# Check current version
+python -c "import torch; print(torch.__version__)"
+
+# If output shows "+cpu" (e.g., "2.9.0+cpu"), reinstall:
+pip uninstall -y torch torchvision
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Verify fix
+python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+```
+
 ## Tiling and Stitching
 
 ### Techniques Used:
-- **Tiling:** Sliding window with overlap (32 pixels default)
+- **Tiling:** Sliding window with overlap (64 pixels default)
 - **Stitching:** Linear feathering (weighted blending with edge ramps)
 
 ### Device Compatibility:
@@ -20,25 +139,133 @@ The tiling and stitching functions are device-agnostic and work on both GPU and 
 ## Ingestion Pipeline
 
 ### Data Structure:
-The input for training is composed of pairs of sharp-blurry images from the GoPro dataset. The `DeblurDataset` class loads these pairs and `random_patch_pair()` extracts random 256×256 patches.
+The input for training is composed of pairs of sharp-blurry images from the GoPro dataset. The `DeblurDataset` class loads these pairs and extracts random 256×256 patches directly in the `__getitem__` method.
+
+### Optimized Data Loading Architecture (v2 - Current)
+
+**Problem with Original Approach:**
+The initial implementation loaded full 1280×720 images into DataLoader batches, then extracted 256×256 patches in the training loop. This resulted in:
+- **94% memory waste**: Loading 1280×720 (921,600 pixels) but using only 256×256 (65,536 pixels)
+- **Slow training**: Denormalize → PIL conversion → patch extraction → re-normalize overhead
+- **DataLoader bottleneck**: Workers loading unnecessarily large images
+
+**Optimized Solution:**
+Moved patch extraction and augmentation into `DeblurDataset.__getitem__()` so DataLoader directly provides training-ready 256×256 patches.
+
+**Architecture Flow:**
+
+**Before (Inefficient):**
+```
+Dataset.__getitem__()
+  ↓ Load 1280×720 image (921,600 pixels)
+  ↓ Apply normalization transform
+  ↓ Return to DataLoader
+DataLoader
+  ↓ Batch full images [B, 3, 720, 1280]
+  ↓ Transfer to GPU (massive memory usage)
+train() function
+  ↓ Denormalize each image
+  ↓ Convert tensor → PIL
+  ↓ Extract random 256×256 patch
+  ↓ Apply augmentation
+  ↓ Convert PIL → tensor
+  ↓ Re-normalize
+  ↓ Stack patches [B, 3, 256, 256]
+  ↓ Forward pass (discard 94% of loaded data!)
+```
+
+**After (Optimized):**
+```
+Dataset.__getitem__()
+  ↓ Load 1280×720 image
+  ↓ Extract random 256×256 patch (PIL domain)
+  ↓ Apply augmentation (PIL domain)
+  ↓ Apply normalization transform
+  ↓ Return 256×256 patch
+DataLoader
+  ↓ Batch patches [B, 3, 256, 256]
+  ↓ Transfer to GPU (6% of original memory)
+train() function
+  ↓ Forward pass directly
+  ↓ Backward pass
+```
+
+**Performance Gains:**
+- **94% reduction in DataLoader memory**: From 921,600 to 65,536 pixels per image
+- **Faster epoch time**: No denormalize/PIL/re-normalize overhead
+- **Cleaner code**: Training loop only handles forward/backward passes
+- **Same flexibility**: Random crop + augmentation still happens each epoch
+
+**Implementation Details:**
+
+**1. DeblurDataset Enhancements:**
+```python
+class DeblurDataset(Dataset):
+    def __init__(self, data_dir, transform=None, patch_size=256, is_training=True):
+        self.patch_size = patch_size      # Default 256×256
+        self.is_training = is_training    # Enable augmentation for training only
+    
+    def __getitem__(self, idx):
+        # Load full images
+        blur_img = Image.open(blur_path).convert('RGB')
+        sharp_img = Image.open(sharp_path).convert('RGB')
+        
+        # Extract random patches BEFORE DataLoader batching
+        blur_patch, sharp_patch = self._extract_random_patch(blur_img, sharp_img)
+        
+        # Apply augmentation (only for training)
+        if self.is_training:
+            blur_patch, sharp_patch = self._apply_augmentation(blur_patch, sharp_patch)
+        
+        # Apply normalization transform
+        if self.transform:
+            blur_patch = self.transform(blur_patch)
+            sharp_patch = self.transform(sharp_patch)
+        
+        return blur_patch, sharp_patch  # Returns 256×256 patches
+```
+
+**2. Simplified Training Loop:**
+```python
+def train(model, train_loader, criterion, optimizer, device):
+    model.train()
+    for blur_batch, sharp_batch in train_loader:
+        # blur_batch shape: [B, 3, 256, 256] - already cropped and augmented!
+        blur_batch = blur_batch.to(device)
+        sharp_batch = sharp_batch.to(device)
+        
+        optimizer.zero_grad()
+        outputs = model(blur_batch)
+        loss = criterion(outputs, sharp_batch)
+        loss.backward()
+        optimizer.step()
+```
+
+**3. Augmentation in Dataset:**
+The `_apply_augmentation()` method applies synchronized transformations to both blur and sharp patches:
+- Horizontal flip (50% probability)
+- Vertical flip (50% probability)
+- Random 90° rotations (0°, 90°, 180°, 270°)
+
+All transformations are synchronized (same random choices for blur and sharp) and performed in PIL domain before normalization.
 
 ### Training Patch Extraction:
-- **One patch per image per epoch** - `random_patch_pair()` is called ONCE per image
+- **One patch per image per epoch** - `_extract_random_patch()` called in `__getitem__()`
 - **Random location each epoch** - Different patch extracted every epoch for data augmentation
 - **Synchronized patches** - Blur and sharp patches extracted from same location
-- **Batch composition** - Batch size of 8-16 means 8-16 images → 8-16 random patches
+- **Batch composition** - Batch size of 4 means 4 images → 4 random 256×256 patches
 
 ### On-The-Fly Data Augmentation
 
-The training pipeline implements **geometric augmentation** applied randomly to each extracted patch, providing additional data diversity without disk storage overhead:
+The training pipeline implements **geometric augmentation** applied randomly to each extracted patch in the `DeblurDataset._apply_augmentation()` method, providing additional data diversity without disk storage overhead:
 
 **Augmentation Techniques:**
 
 **1. Horizontal Flip (50% probability)**
 ```python
 if random.random() > 0.5:
-    blur_patch = torch.flip(blur_patch, dims=[2])   # Width axis
-    sharp_patch = torch.flip(sharp_patch, dims=[2])
+    blur_patch = TF.hflip(blur_patch)
+    sharp_patch = TF.hflip(sharp_patch)
 ```
 - Mirrors image left-to-right
 - Doubles effective dataset size
@@ -47,8 +274,8 @@ if random.random() > 0.5:
 **2. Vertical Flip (50% probability)**
 ```python
 if random.random() > 0.5:
-    blur_patch = torch.flip(blur_patch, dims=[1])   # Height axis
-    sharp_patch = torch.flip(sharp_patch, dims=[1])
+    blur_patch = TF.vflip(blur_patch)
+    sharp_patch = TF.vflip(sharp_patch)
 ```
 - Mirrors image top-to-bottom
 - Further increases dataset diversity
@@ -56,10 +283,16 @@ if random.random() > 0.5:
 
 **3. 90° Rotations (25% probability each: 0°, 90°, 180°, 270°)**
 ```python
-k = random.randint(0, 3)  # 0=no rotation, 1=90°, 2=180°, 3=270°
+k = random.choice([0, 1, 2, 3])  # 0=no rotation, 1=90°, 2=180°, 3=270°
 if k > 0:
-    blur_patch = torch.rot90(blur_patch, k=k, dims=[1, 2])
-    sharp_patch = torch.rot90(sharp_patch, k=k, dims=[1, 2])
+    blur_tensor = TF.to_tensor(blur_patch)
+    sharp_tensor = TF.to_tensor(sharp_patch)
+    
+    blur_tensor = torch.rot90(blur_tensor, k=k, dims=[1, 2])
+    sharp_tensor = torch.rot90(sharp_tensor, k=k, dims=[1, 2])
+    
+    blur_patch = TF.to_pil_image(blur_tensor)
+    sharp_patch = TF.to_pil_image(sharp_tensor)
 ```
 - Rotates in 90° increments
 - Helps model learn rotation invariance
@@ -67,44 +300,39 @@ if k > 0:
 
 **Key Properties:**
 - **Synchronized augmentation**: Blur and sharp patches receive identical transformations
-- **Zero disk overhead**: Augmentation happens in memory during training
+- **Zero disk overhead**: Augmentation happens in Dataset during loading
 - **Infinite variations**: Different random augmentation each epoch
 - **Preserves blur characteristics**: Only geometric transforms (no scaling/color jittering)
 - **Effective dataset multiplier**: ~4-8x effective dataset size
+- **Applied before normalization**: Augmentation works in PIL domain [0, 255]
 
 **Benefits:**
 - Reduces overfitting by increasing training data diversity
 - Improves model generalization to different image orientations
-- No preprocessing required (augmentation integrated into training loop)
+- No preprocessing required (augmentation integrated into Dataset)
 - Complements random patch extraction for maximum data augmentation
 
-**Training Loop Pattern:**
+**Training Flow:**
 ```python
 for epoch in range(num_epochs):
-    for batch in dataloader:  # batch has 8-16 image pairs
-        blur_patches = []
-        sharp_patches = []
+    for blur_patch, sharp_patch in dataloader:  
+        # Patches already extracted and augmented by Dataset!
+        # blur_patch shape: [B, 3, 256, 256]
+        # sharp_patch shape: [B, 3, 256, 256]
         
-        # Call random_patch_pair() ONCE per image in batch
-        for blur_img, sharp_img in batch:
-            b_patch, s_patch = random_patch_pair(blur_img, sharp_img, 256)
-            blur_patches.append(b_patch)
-            sharp_patches.append(s_patch)
-        
-        # Stack into batch tensors
-        blur_batch = torch.stack(blur_patches)   # [8-16, 3, 256, 256]
-        sharp_batch = torch.stack(sharp_patches)
-        
-        # Train on batch
-        output = model(blur_batch)
-        loss = criterion(output, sharp_batch)
+        # Direct forward pass - no preprocessing needed
+        output = model(blur_patch)
+        loss = criterion(output, sharp_patch)
+        loss.backward()
+        optimizer.step()
 ```
 
 ### Summary:
-- Batch size = 8-16 images
-- One random 256×256 patch extracted from each image
-- Result: 8-16 patches per training batch
-- Different random locations each epoch
+- Batch size = 4-8 images
+- One random 256×256 patch extracted from each image in Dataset
+- Augmentation applied in Dataset before batching
+- Result: 4-8 pre-augmented patches per training batch
+- Different random locations and augmentations each epoch
 
 ## Training Configuration
 

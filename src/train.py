@@ -9,12 +9,13 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 from torchvision import transforms
+import numpy as np
 
 from src.data_ingestion import DeblurDataset
 from src.model_class import DeblurUNet
 from src.utils import train, evaluate
 from src.utils import create_model_signature
-from src.CharbonnierLoss import CharbonnierLoss
+from src.enhanced_loss import CombinedLoss
 
 
 
@@ -24,51 +25,83 @@ def main():
     parser.add_argument('--train_data', type=str, required=True, help='path to training data')
     parser.add_argument('--test_data', type=str, required=True, help='path to val data')
     parser.add_argument('--registered_model_name', type=str, required=True)
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--num_epochs', type=int, default=100)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
-    parser.add_argument('--patience', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--num_epochs', type=int, default=50)
+    parser.add_argument('--learning_rate', type=float, default=0.0001)  # REDUCED from 0.002
+    parser.add_argument('--patience', type=int, default=20)
 
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
-
+    
     mlflow.start_run()
 
     os.makedirs('checkpoints', exist_ok=True)
-
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"using device: {device}")
     print(f"using device: {device}")
 
     # transformation and data loading
-
     tsf = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5], std=[0.5])
     ])
-
+    
     logging.info(f"loading training data from {args.train_data}")
     train_dataset = DeblurDataset(args.train_data, transform=tsf)
     logging.info(f"loading testing dataset from {args.test_data}")
-    test_dataset = DeblurDataset(args.test_data, transform=tsf)
-
-    # Reduced num_workers to prevent OOM - each worker loads full images before patching
-    # Use 0 for debugging, increase to 2 if memory allows
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, pin_memory=False)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0, pin_memory=False)
-
+    test_dataset = DeblurDataset(args.test_data, transform=tsf)    # DataLoader configuration optimized for large images
+    NUM_WORKERS = min(8, os.cpu_count() or 4)
+    # pin_memory=True to speed up GPU transfer
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True, 
+        num_workers=NUM_WORKERS,  
+        pin_memory=True if torch.cuda.is_available() else False,  # Faster GPU transfer
+        persistent_workers=True  # Keep workers alive between epochs
+    )
+    test_loader = DataLoader(
+        test_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=False, 
+        num_workers=NUM_WORKERS,  
+        pin_memory=True if torch.cuda.is_available() else False,        persistent_workers=True
+    )
+    
     # Model
-
+    logging.info("Initializing model...")
     model = DeblurUNet().to(device)
-    criterion = CharbonnierLoss()
+    logging.info(f"Model moved to {device}")
+    criterion = CombinedLoss()
+    
+    # Use command-line LR if provided, otherwise use 1e-4 default
+    # Suggestion: Try 5e-4 or 1e-3 for faster initial convergence
+    initial_lr = args.learning_rate if hasattr(args, 'learning_rate') else 2e-4
+    
     optimiser = optim.AdamW(
         model.parameters(),
-        lr=1e-4,
+        lr=initial_lr,  # Use configurable learning rate
         betas=(0.9, 0.999),
-        eps=1e-8,
+        # eps=1e-8,
         weight_decay=1e-4
     )
+    logging.info("Optimizer initialized")
+    
+    # Learning rate scheduler: reduces LR when validation PSNR plateaus
+    # This enables "second convergence" by allowing finer optimization
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+    optimiser, 
+    mode='max',
+    factor=0.5,
+    patience=10,      # INCREASED from 5 to 10 (less sensitive to noise)
+    threshold=0.01,   # ADDED: only trigger if improvement < 0.01 dB
+    threshold_mode='abs',
+    min_lr=1e-7
+)
+    logging.info("Learning rate scheduler initialized (ReduceLROnPlateau)")
+    
     mlflow.log_param("batch_size", args.batch_size)
     mlflow.log_param("num_epochs", args.num_epochs)
     mlflow.log_param("learning_rate", args.learning_rate)
@@ -78,23 +111,33 @@ def main():
     best_model_state = None
     best_current_ssim = 0.0
     best_current_psnr = 0.0
-    patience_counter = 0
-
-    # Updated GradScaler API (PyTorch 2.0+)
+    patience_counter = 0    # Updated GradScaler API (PyTorch 2.0+)
     from torch.amp.grad_scaler import GradScaler
     scaler = GradScaler('cuda' if torch.cuda.is_available() else 'cpu')
+    
     for epoch in range(args.num_epochs):
         train_loss = train(model, train_loader, criterion, optimiser, device)
         val_loss, val_psnr, val_ssim = evaluate(model, test_loader, criterion, device)
 
+        # CRITICAL FIX: Validate metrics before logging
+        if val_psnr == 0.0 or np.isnan(val_psnr) or np.isinf(val_psnr):
+            logging.error(f"Invalid PSNR at epoch {epoch+1}: {val_psnr}. Stopping training.")
+            print(f"❌ Training failed at epoch {epoch+1} due to invalid metrics")
+            break
+            
         logging.info(f"epoch {epoch+1}/{args.num_epochs} train loss: {train_loss:.2f}, "
                  f"val loss: {val_loss:.2f}, psnr: {val_psnr}, ssim: {val_ssim}")
         
-        # log metrics
-        mlflow.log_metric("train_loss", train_loss, step=epoch)
+        # log metrics        mlflow.log_metric("train_loss", train_loss, step=epoch)
         mlflow.log_metric("val_loss", val_loss, step=epoch)
         mlflow.log_metric("psnr", float(val_psnr), step=epoch)
         mlflow.log_metric("ssim", float(val_ssim), step=epoch)
+        
+        # Step the learning rate scheduler based on validation PSNR
+        scheduler.step(val_psnr)
+        current_lr = optimiser.param_groups[0]['lr']
+        mlflow.log_metric("learning_rate", current_lr, step=epoch)
+        logging.info(f"Current learning rate: {current_lr:.2e}")
 
         # check model improvement against main metric
         if val_psnr > best_current_psnr:

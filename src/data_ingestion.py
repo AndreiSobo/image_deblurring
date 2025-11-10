@@ -1,12 +1,17 @@
 from torch.utils.data import Dataset, DataLoader
 import logging
 import os
+import random
 from PIL import Image
+import torch
+import torchvision.transforms.functional as TF
 
 class DeblurDataset(Dataset):
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, transform=None, patch_size=256, is_training=True):
         self.data_dir = data_dir
         self.transform = transform
+        self.patch_size = patch_size
+        self.is_training = is_training  # Enable augmentation only for training
         
         # Log the initial directory
         logging.info(f"Initializing GoPro dataset with data directory: {self.data_dir}")
@@ -67,23 +72,93 @@ class DeblurDataset(Dataset):
                 else:
                     logging.warning(f"No matching sharp image for {blur_path}")
                     print(f"No matching sharp image for {blur_path}")
-        
         logging.info(f"Found {len(image_pairs)} valid image pairs")
         print(f"Found {len(image_pairs)} valid image pairs")
         return image_pairs
-
+    
     def __len__(self):
         return len(self.image_pairs)
-
+    
     def __getitem__(self, idx):
         blur_path, sharp_path = self.image_pairs[idx]
-        # blur_img = Image.open(blur_path).convert('L')  # for monochrome
-        blur_img = Image.open(blur_path).convert('RGB')
-        sharp_img = Image.open(sharp_path).convert('RGB')
         
+        # Load images on-demand (lazy loading)
+        try:
+            blur_img = Image.open(blur_path).convert('RGB')
+            sharp_img = Image.open(sharp_path).convert('RGB')
+        except Exception as e:
+            logging.error(f"Error loading images at index {idx}: {e}")
+            raise
+        
+        # Extract random patches directly in the dataset
+        # This happens BEFORE DataLoader batching, reducing memory by ~94%
+        blur_patch, sharp_patch = self._extract_random_patch(blur_img, sharp_img)
+        
+        # Apply data augmentation (only during training)
+        if self.is_training:
+            blur_patch, sharp_patch = self._apply_augmentation(blur_patch, sharp_patch)
+        
+        # Apply normalization transform if provided
         if self.transform:
-            blur_img = self.transform(blur_img)
-            sharp_img = self.transform(sharp_img)
+            blur_patch = self.transform(blur_patch)
+            sharp_patch = self.transform(sharp_patch)
         
-        # print(f"Blur image shape in the _getitem func: {blur_img.shape}")  
-        return blur_img, sharp_img
+        return blur_patch, sharp_patch
+    
+    def _extract_random_patch(self, blur_img, sharp_img):
+        """Extract synchronized random patches from blur and sharp images."""
+        bw, bh = blur_img.size
+        sw, sh = sharp_img.size
+        
+        # Ensure both images have the same size (center crop if needed)
+        if (bw, bh) != (sw, sh):
+            tw, th = min(bw, sw), min(bh, sh)
+            blur_img = TF.center_crop(blur_img, (th, tw))
+            sharp_img = TF.center_crop(sharp_img, (th, tw))
+        
+        W, H = blur_img.size
+        
+        # Handle images smaller than patch_size
+        if W < self.patch_size or H < self.patch_size:
+            pad_w = max(0, self.patch_size - W)
+            pad_h = max(0, self.patch_size - H)
+            padding = (pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2)
+            blur_img = TF.pad(blur_img, padding, padding_mode='reflect')
+            sharp_img = TF.pad(sharp_img, padding, padding_mode='reflect')
+            W, H = blur_img.size
+        
+        # Extract random synchronized patch
+        x = random.randint(0, W - self.patch_size)
+        y = random.randint(0, H - self.patch_size)
+        
+        blur_patch = TF.crop(blur_img, y, x, self.patch_size, self.patch_size)
+        sharp_patch = TF.crop(sharp_img, y, x, self.patch_size, self.patch_size)
+        
+        return blur_patch, sharp_patch
+    
+    def _apply_augmentation(self, blur_patch, sharp_patch):
+        """Apply synchronized data augmentation to patches."""
+        # Horizontal flip
+        if random.random() > 0.5:
+            blur_patch = TF.hflip(blur_patch)
+            sharp_patch = TF.hflip(sharp_patch)
+        
+        # Vertical flip
+        if random.random() > 0.5:
+            blur_patch = TF.vflip(blur_patch)
+            sharp_patch = TF.vflip(sharp_patch)
+        
+        # Random 90° rotations (0, 90, 180, 270 degrees)
+        k = random.choice([0, 1, 2, 3])
+        if k > 0:
+            # Convert to tensor for rotation, then back to PIL
+            blur_tensor = TF.to_tensor(blur_patch)
+            sharp_tensor = TF.to_tensor(sharp_patch)
+            
+            blur_tensor = torch.rot90(blur_tensor, k=k, dims=[1, 2])
+            sharp_tensor = torch.rot90(sharp_tensor, k=k, dims=[1, 2])
+            
+            blur_patch = TF.to_pil_image(blur_tensor)
+            sharp_patch = TF.to_pil_image(sharp_tensor)
+        
+        return blur_patch, sharp_patch

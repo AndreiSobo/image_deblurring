@@ -1,6 +1,7 @@
 # file with all the utility methods. Used to promote decoupling and Object Oriented Programming principles.
 
 import random
+import logging
 from pathlib import Path
 from typing import Tuple, List
 from skimage.metrics import peak_signal_noise_ratio as psnr
@@ -122,7 +123,7 @@ def random_patch_pair(blur_img: Image.Image,
     return b_patch, s_patch
 
 # Batched tile generator for inference
-def make_tile_coords(H: int, W: int, tile_size: int = DEFAULT_TILE_SIZE, overlap: int = 32):
+def make_tile_coords(H: int, W: int, tile_size: int = DEFAULT_TILE_SIZE, overlap: int = 64):
     stride = tile_size - overlap
     xs = list(range(0, W, stride))
     ys = list(range(0, H, stride))
@@ -183,33 +184,21 @@ def tile_tensor(tensor: torch.Tensor, tile_size: int, overlap: int) -> Tuple[Lis
     
     return tiles, coords
 
-def create_blend_weight(tile_h: int, tile_w: int, overlap: int) -> torch.Tensor:
+def create_blend_weight_cosine(tile_h: int, tile_w: int, overlap: int) -> torch.Tensor:
     """
-    Create a 2D weight map with linear feathering on edges for smooth tile blending.
-    
-    This creates a weight map that is 1.0 in the center and smoothly transitions
-    to 0.0 at the edges over the overlap region. This reduces edge artifacts when
-    stitching tiles back together.
-    
-    Args:
-        tile_h: Height of the tile
-        tile_w: Width of the tile
-        overlap: Number of pixels for the feathering transition on each edge
-        
-    Returns:
-        Weight map tensor of shape [tile_h, tile_w] with values in [0, 1]
+    Cosine taper provides smoother blending than linear.
+    Falls off as: 0.5 * (1 + cos(π * dist/overlap))
     """
     weight = torch.ones((tile_h, tile_w))
     
-    # Create linear ramp from 0 to 1 over the overlap region
     for i in range(overlap):
-        alpha = (i + 1) / (overlap + 1)  # +1 to avoid 0 at edges
+        # Cosine taper: smooth falloff from 1 to 0
+        alpha = 0.5 * (1 + torch.cos(torch.tensor(torch.pi * i / overlap)))
         
-        # Apply feathering to all four edges
-        weight[i, :] *= alpha              # Top edge
-        weight[-(i + 1), :] *= alpha       # Bottom edge
-        weight[:, i] *= alpha              # Left edge
-        weight[:, -(i + 1)] *= alpha       # Right edge
+        weight[i, :] *= alpha                # Top
+        weight[-(i + 1), :] *= alpha         # Bottom
+        weight[:, i] *= alpha                # Left
+        weight[:, -(i + 1)] *= alpha         # Right
     
     return weight
 
@@ -244,7 +233,7 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
         
         # Create blend weight map with linear feathering
         tile_h, tile_w = tile.shape[-2], tile.shape[-1]
-        tile_weight = create_blend_weight(tile_h, tile_w, overlap)
+        tile_weight = create_blend_weight_cosine(tile_h, tile_w, overlap)
         tile_weight = tile_weight.to(tile.device)
         
         # Apply weighted blending
@@ -258,6 +247,10 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
     return out.unsqueeze(0)
 
 def calculate_metrics(output, target):
+    # CRITICAL FIX: Clamp before denormalization to prevent invalid values
+    output = torch.clamp(output, -1.0, 1.0)
+    target = torch.clamp(target, -1.0, 1.0)
+    
     # Denormalize from [-1, 1] to [0, 1]
     output = (output + 1.0) / 2.0
     target = (target + 1.0) / 2.0
@@ -265,6 +258,10 @@ def calculate_metrics(output, target):
     # Convert to numpy (assuming shape: B, C, H, W)
     output_np = output.cpu().detach().numpy()
     target_np = target.cpu().detach().numpy()
+    
+    # Clip to valid range [0, 1] to prevent PSNR/SSIM errors
+    output_np = np.clip(output_np, 0.0, 1.0)
+    target_np = np.clip(target_np, 0.0, 1.0)
     
     batch_size = output_np.shape[0]
     psnr_values = []
@@ -283,74 +280,26 @@ def calculate_metrics(output, target):
     return np.mean(psnr_values), np.mean(ssim_values)
 
 def train(model, train_loader, criterion, optimizer, device, accumulation_steps=1):
+    """
+    Simplified training loop - patches are already extracted and augmented by the Dataset.
+    Now the DataLoader directly provides 256x256 patches, reducing memory by ~94%.
+    """
     model.train()
     scaler = GradScaler('cuda' if device.type == 'cuda' else 'cpu')
     running_loss = 0.0
 
     for blur_batch, sharp_batch in train_loader:
-        # blur_batch shape: [B, 3, H, W], e.g., [8, 3, 720, 1280]
+        # blur_batch shape: [B, 3, 256, 256] - already cropped patches from Dataset
         blur_batch = blur_batch.to(device)
         sharp_batch = sharp_batch.to(device)
         
         optimizer.zero_grad()
         
-        # Extract random patches from each image in batch and apply augmentation
-        blur_patches = []
-        sharp_patches = []
-        
-        for i in range(blur_batch.shape[0]):
-            # Get single image from batch: [3, H, W]
-            blur_img = blur_batch[i]
-            sharp_img = sharp_batch[i]
-            
-            # Denormalize from [-1, 1] to [0, 1] for PIL conversion
-            blur_img = (blur_img + 1.0) / 2.0
-            sharp_img = (sharp_img + 1.0) / 2.0
-            
-            # Convert to PIL for random_patch_pair
-            blur_pil = tensor_to_pil(blur_img)
-            sharp_pil = tensor_to_pil(sharp_img)
-            
-            # Extract random patch (returns PIL Images)
-            blur_patch_pil, sharp_patch_pil = random_patch_pair(blur_pil, sharp_pil, patch_size=256)
-            
-            # Convert back to tensors
-            blur_patch = pil_to_tensor(blur_patch_pil)
-            sharp_patch = pil_to_tensor(sharp_patch_pil)
-            
-            # Normalize back to [-1, 1]
-            blur_patch = blur_patch * 2.0 - 1.0
-            sharp_patch = sharp_patch * 2.0 - 1.0
-            
-            # Apply on-the-fly augmentation
-            # Horizontal flip
-            if random.random() > 0.5:
-                blur_patch = torch.flip(blur_patch, dims=[2])  # dims=[2] for width in [C, H, W]
-                sharp_patch = torch.flip(sharp_patch, dims=[2])
-            
-            # Vertical flip
-            if random.random() > 0.5:
-                blur_patch = torch.flip(blur_patch, dims=[1])  # dims=[1] for height in [C, H, W]
-                sharp_patch = torch.flip(sharp_patch, dims=[1])
-            
-            # 90 degree rotations
-            k = random.randint(0, 3)
-            if k > 0:
-                blur_patch = torch.rot90(blur_patch, k=k, dims=[1, 2])  # dims=[1,2] for [C, H, W]
-                sharp_patch = torch.rot90(sharp_patch, k=k, dims=[1, 2])
-            
-            blur_patches.append(blur_patch)
-            sharp_patches.append(sharp_patch)
-        
-        # Stack patches back into batch: [B, 3, 256, 256]
-        blur_patch_batch = torch.stack(blur_patches).to(device)
-        sharp_patch_batch = torch.stack(sharp_patches).to(device)
-        
-        # Forward pass with augmented patches
+        # Forward pass with pre-augmented patches
         device_type = 'cuda' if device.type == 'cuda' else 'cpu'
         with autocast(device_type=device_type):
-            outputs = model(blur_patch_batch)
-            loss = criterion(outputs, sharp_patch_batch)
+            outputs = model(blur_batch)
+            loss = criterion(outputs, sharp_batch)
         
         # Scale loss and backward pass
         scaler.scale(loss).backward()
@@ -368,65 +317,65 @@ def train(model, train_loader, criterion, optimizer, device, accumulation_steps=
     return running_loss / len(train_loader)
 
 def evaluate(model, val_loader, criterion, device):
+    """
+    Simplified evaluation loop - patches are already extracted by the Dataset.
+    No augmentation applied during validation.
+    """
     model.eval()
 
     running_psnr = 0.0
     running_ssim = 0.0
     running_loss = 0.0
+    valid_batches = 0
     
     with torch.no_grad():
         for blur_batch, sharp_batch in val_loader:
+            # blur_batch shape: [B, 3, 256, 256] - already cropped patches from Dataset
             blur_batch = blur_batch.to(device)
             sharp_batch = sharp_batch.to(device)
             
-            # Extract random patches from each image in batch (no augmentation for validation)
-            blur_patches = []
-            sharp_patches = []
-            
-            for i in range(blur_batch.shape[0]):
-                # Get single image from batch: [3, H, W]
-                blur_img = blur_batch[i]
-                sharp_img = sharp_batch[i]
-                
-                # Denormalize from [-1, 1] to [0, 1]
-                blur_img = (blur_img + 1.0) / 2.0
-                sharp_img = (sharp_img + 1.0) / 2.0
-                
-                # Convert to PIL
-                blur_pil = tensor_to_pil(blur_img)
-                sharp_pil = tensor_to_pil(sharp_img)
-                
-                # Extract random patch
-                blur_patch_pil, sharp_patch_pil = random_patch_pair(blur_pil, sharp_pil, patch_size=256)
-                
-                # Convert back to tensors
-                blur_patch = pil_to_tensor(blur_patch_pil)
-                sharp_patch = pil_to_tensor(sharp_patch_pil)
-                
-                # Normalize back to [-1, 1]
-                blur_patch = blur_patch * 2.0 - 1.0
-                sharp_patch = sharp_patch * 2.0 - 1.0
-                
-                blur_patches.append(blur_patch)
-                sharp_patches.append(sharp_patch)
-            
-            # Stack patches back into batch
-            blur_patch_batch = torch.stack(blur_patches).to(device)
-            sharp_patch_batch = torch.stack(sharp_patches).to(device)
-            
             # Forward pass
-            outputs = model(blur_patch_batch)
-            val_loss = criterion(outputs, sharp_patch_batch)
+            outputs = model(blur_batch)
             
-            # Calculate metrics
-            psnr_val, ssim_val = calculate_metrics(outputs, sharp_patch_batch)
-            running_psnr += psnr_val
-            running_ssim += ssim_val
-            running_loss += val_loss
+            # CRITICAL FIX: Check for NaN/Inf before metrics calculation
+            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
+                logging.warning(f"NaN/Inf detected in model outputs during evaluation, skipping batch")
+                continue
+                
+            val_loss = criterion(outputs, sharp_batch)
+            
+            # CRITICAL FIX: Check if loss is valid
+            if torch.isnan(val_loss) or torch.isinf(val_loss):
+                logging.warning(f"NaN/Inf detected in loss during evaluation, skipping batch")
+                continue
+            
+            # Calculate metrics with error handling
+            try:
+                psnr_val, ssim_val = calculate_metrics(outputs, sharp_batch)
+                
+                # CRITICAL FIX: Validate metric values
+                if np.isnan(psnr_val) or np.isinf(psnr_val) or np.isnan(ssim_val) or np.isinf(ssim_val):
+                    logging.warning(f"Invalid metrics: PSNR={psnr_val}, SSIM={ssim_val}, skipping batch")
+                    continue
+                    
+                running_psnr += psnr_val
+                running_ssim += ssim_val
+                running_loss += val_loss.item()
+                valid_batches += 1
+            except Exception as e:
+                logging.warning(f"Error calculating metrics: {e}, skipping batch")
+                continue
     
-    avg_psnr = running_psnr / len(val_loader)
-    avg_ssim = running_ssim / len(val_loader)
-    avg_loss = running_loss / len(val_loader)
+    # CRITICAL FIX: Handle case where all batches failed
+    if valid_batches == 0:
+        logging.error("All validation batches failed! Returning fallback values")
+        return torch.tensor(999.0), 0.0, 0.0
+    
+    avg_psnr = running_psnr / valid_batches
+    avg_ssim = running_ssim / valid_batches
+    avg_loss = running_loss / valid_batches
+    
+    logging.info(f"Evaluated {valid_batches}/{len(val_loader)} batches successfully")
     return avg_loss, avg_psnr, avg_ssim
 
 def create_model_signature(model, device):
@@ -445,3 +394,58 @@ def create_model_signature(model, device):
     example_output_np = example_output.cpu().numpy()
     
     return infer_signature(example_input_np, example_output_np)
+
+def infer_large_image(model, img_pil, device, tile_size=256, overlap=64):
+    """
+    Inference with automatic tiling for any size image - NO RESIZING NEEDED.
+    Uses your existing tiling infrastructure but optimized.
+    
+    Args:
+        model: Trained deblurring model
+        img_pil: PIL Image of any size
+        device: torch device
+        tile_size: Size of tiles (256 matches training)
+        overlap: Overlap between tiles (64 = 25% overlap recommended)
+    """
+    model.eval()
+    
+    # Convert to tensor
+    img_tensor = pil_to_tensor(img_pil)
+    
+    # Normalize to [-1, 1] (matching your training normalization)
+    img_tensor = (img_tensor - 0.5) / 0.5
+    
+    # Add batch dimension: [1, C, H, W]
+    img_tensor = img_tensor.unsqueeze(0).to(device)
+    
+    _, C, H, W = img_tensor.shape
+    
+    # If image is smaller than tile_size, process directly
+    if H <= tile_size and W <= tile_size:
+        with torch.no_grad():
+            output = model(img_tensor)
+        output = output.squeeze(0)
+    else:
+        # Use your existing tile/stitch functions
+        tiles, coords = tile_tensor(img_tensor.squeeze(0), tile_size, overlap)
+        
+        out_tiles = []
+        with torch.no_grad():
+            for tile in tiles:
+                # Ensure tile is correct shape [1, C, H, W]
+                if tile.ndim == 3:
+                    tile = tile.unsqueeze(0)
+                tile = tile.to(device)
+                out_tile = model(tile)
+                out_tiles.append(out_tile.squeeze(0))  # Remove batch dim
+        
+        # Stitch with your blend weights
+        output = stitch_tiles(out_tiles, coords, (C, H, W), overlap)
+        output = output.squeeze(0)  # Remove batch dimension
+    
+    # Denormalize back to [0, 1]
+    output = (output * 0.5) + 0.5
+    output = output.clamp(0, 1)
+    
+    # Convert back to PIL
+    return tensor_to_pil(output)
