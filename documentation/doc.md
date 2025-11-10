@@ -129,7 +129,7 @@ optimizer = optim.AdamW(
 ### Loss Function and Metrics
 
 **Training Loss: CharbonnierLoss**
-- Custom implementation of Charbonnier loss (smooth L1 variant)
+- Custom implementation of Charbonnier loss (smooth L1 variant) 
 - More robust to outliers than MSE
 - Better gradient properties for image restoration
 - Formula: `sqrt((pred - target)^2 + epsilon^2)`
