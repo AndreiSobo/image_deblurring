@@ -3,11 +3,18 @@
 import random
 from pathlib import Path
 from typing import Tuple, List
+from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
 
 from PIL import Image
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
+import os
+from torch.amp.grad_scaler import GradScaler
+from torch.amp.autocast_mode import autocast
+from torch.nn.utils import clip_grad_norm_
+from mlflow.models.signature import infer_signature
 
 # Config
 DEFAULT_TILE_SIZE = 256
@@ -249,3 +256,192 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
     out = out / weight
     
     return out.unsqueeze(0)
+
+def calculate_metrics(output, target):
+    # Denormalize from [-1, 1] to [0, 1]
+    output = (output + 1.0) / 2.0
+    target = (target + 1.0) / 2.0
+    
+    # Convert to numpy (assuming shape: B, C, H, W)
+    output_np = output.cpu().detach().numpy()
+    target_np = target.cpu().detach().numpy()
+    
+    batch_size = output_np.shape[0]
+    psnr_values = []
+    ssim_values = []
+
+    for i in range(batch_size):
+        out_img = np.transpose(output_np[i], (1,2,0))
+        tgt_img = np.transpose(target_np[i], (1,2,0))
+
+        psnr_val = psnr(tgt_img, out_img, data_range=1.0)
+        ssim_val = ssim(tgt_img, out_img, channel_axis=2, data_range=1.0)
+        
+        psnr_values.append(psnr_val)
+        ssim_values.append(ssim_val)
+    
+    return np.mean(psnr_values), np.mean(ssim_values)
+
+def train(model, train_loader, criterion, optimizer, device, accumulation_steps=1):
+    model.train()
+    scaler = GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+    running_loss = 0.0
+
+    for blur_batch, sharp_batch in train_loader:
+        # blur_batch shape: [B, 3, H, W], e.g., [8, 3, 720, 1280]
+        blur_batch = blur_batch.to(device)
+        sharp_batch = sharp_batch.to(device)
+        
+        optimizer.zero_grad()
+        
+        # Extract random patches from each image in batch and apply augmentation
+        blur_patches = []
+        sharp_patches = []
+        
+        for i in range(blur_batch.shape[0]):
+            # Get single image from batch: [3, H, W]
+            blur_img = blur_batch[i]
+            sharp_img = sharp_batch[i]
+            
+            # Denormalize from [-1, 1] to [0, 1] for PIL conversion
+            blur_img = (blur_img + 1.0) / 2.0
+            sharp_img = (sharp_img + 1.0) / 2.0
+            
+            # Convert to PIL for random_patch_pair
+            blur_pil = tensor_to_pil(blur_img)
+            sharp_pil = tensor_to_pil(sharp_img)
+            
+            # Extract random patch (returns PIL Images)
+            blur_patch_pil, sharp_patch_pil = random_patch_pair(blur_pil, sharp_pil, patch_size=256)
+            
+            # Convert back to tensors
+            blur_patch = pil_to_tensor(blur_patch_pil)
+            sharp_patch = pil_to_tensor(sharp_patch_pil)
+            
+            # Normalize back to [-1, 1]
+            blur_patch = blur_patch * 2.0 - 1.0
+            sharp_patch = sharp_patch * 2.0 - 1.0
+            
+            # Apply on-the-fly augmentation
+            # Horizontal flip
+            if random.random() > 0.5:
+                blur_patch = torch.flip(blur_patch, dims=[2])  # dims=[2] for width in [C, H, W]
+                sharp_patch = torch.flip(sharp_patch, dims=[2])
+            
+            # Vertical flip
+            if random.random() > 0.5:
+                blur_patch = torch.flip(blur_patch, dims=[1])  # dims=[1] for height in [C, H, W]
+                sharp_patch = torch.flip(sharp_patch, dims=[1])
+            
+            # 90 degree rotations
+            k = random.randint(0, 3)
+            if k > 0:
+                blur_patch = torch.rot90(blur_patch, k=k, dims=[1, 2])  # dims=[1,2] for [C, H, W]
+                sharp_patch = torch.rot90(sharp_patch, k=k, dims=[1, 2])
+            
+            blur_patches.append(blur_patch)
+            sharp_patches.append(sharp_patch)
+        
+        # Stack patches back into batch: [B, 3, 256, 256]
+        blur_patch_batch = torch.stack(blur_patches).to(device)
+        sharp_patch_batch = torch.stack(sharp_patches).to(device)
+        
+        # Forward pass with augmented patches
+        device_type = 'cuda' if device.type == 'cuda' else 'cpu'
+        with autocast(device_type=device_type):
+            outputs = model(blur_patch_batch)
+            loss = criterion(outputs, sharp_patch_batch)
+        
+        # Scale loss and backward pass
+        scaler.scale(loss).backward()
+        
+        # Gradient clipping (unscales gradients first)
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
+        # Optimizer step with scaler
+        scaler.step(optimizer)
+        scaler.update()
+        
+        running_loss += loss.item()
+    
+    return running_loss / len(train_loader)
+
+def evaluate(model, val_loader, criterion, device):
+    model.eval()
+
+    running_psnr = 0.0
+    running_ssim = 0.0
+    running_loss = 0.0
+    
+    with torch.no_grad():
+        for blur_batch, sharp_batch in val_loader:
+            blur_batch = blur_batch.to(device)
+            sharp_batch = sharp_batch.to(device)
+            
+            # Extract random patches from each image in batch (no augmentation for validation)
+            blur_patches = []
+            sharp_patches = []
+            
+            for i in range(blur_batch.shape[0]):
+                # Get single image from batch: [3, H, W]
+                blur_img = blur_batch[i]
+                sharp_img = sharp_batch[i]
+                
+                # Denormalize from [-1, 1] to [0, 1]
+                blur_img = (blur_img + 1.0) / 2.0
+                sharp_img = (sharp_img + 1.0) / 2.0
+                
+                # Convert to PIL
+                blur_pil = tensor_to_pil(blur_img)
+                sharp_pil = tensor_to_pil(sharp_img)
+                
+                # Extract random patch
+                blur_patch_pil, sharp_patch_pil = random_patch_pair(blur_pil, sharp_pil, patch_size=256)
+                
+                # Convert back to tensors
+                blur_patch = pil_to_tensor(blur_patch_pil)
+                sharp_patch = pil_to_tensor(sharp_patch_pil)
+                
+                # Normalize back to [-1, 1]
+                blur_patch = blur_patch * 2.0 - 1.0
+                sharp_patch = sharp_patch * 2.0 - 1.0
+                
+                blur_patches.append(blur_patch)
+                sharp_patches.append(sharp_patch)
+            
+            # Stack patches back into batch
+            blur_patch_batch = torch.stack(blur_patches).to(device)
+            sharp_patch_batch = torch.stack(sharp_patches).to(device)
+            
+            # Forward pass
+            outputs = model(blur_patch_batch)
+            val_loss = criterion(outputs, sharp_patch_batch)
+            
+            # Calculate metrics
+            psnr_val, ssim_val = calculate_metrics(outputs, sharp_patch_batch)
+            running_psnr += psnr_val
+            running_ssim += ssim_val
+            running_loss += val_loss
+    
+    avg_psnr = running_psnr / len(val_loader)
+    avg_ssim = running_ssim / len(val_loader)
+    avg_loss = running_loss / len(val_loader)
+    return avg_loss, avg_psnr, avg_ssim
+
+def create_model_signature(model, device):
+    """
+    Creates MLflow model signature
+    """
+    # Create example input matching actual training data shape
+    # Shape: [1, 3, 256, 256] for batch_size=1, RGB (3 channels), 256x256 pixels
+    example_input = torch.randn(1, 3, 256, 256).to(device)
+    
+    with torch.no_grad():
+        example_output = model(example_input)
+    
+    # Convert to numpy for MLflow signature inference
+    example_input_np = example_input.cpu().numpy()
+    example_output_np = example_output.cpu().numpy()
+    
+    return infer_signature(example_input_np, example_output_np)
