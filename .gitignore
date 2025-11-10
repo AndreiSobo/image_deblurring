@@ -2,4 +2,6 @@
 virtual_env/*
 __pycache__/
 data/*
+mlruns/
+checkpoints/
 venv310/*
