@@ -279,38 +279,46 @@ def calculate_metrics(output, target):
     
     return np.mean(psnr_values), np.mean(ssim_values)
 
-def train(model, train_loader, criterion, optimizer, device, accumulation_steps=1):
+def train(model, train_loader, criterion, optimizer, device):
     """
     Simplified training loop - patches are already extracted and augmented by the Dataset.
     Now the DataLoader directly provides 256x256 patches, reducing memory by ~94%.
     """
     model.train()
-    scaler = GradScaler('cuda' if device.type == 'cuda' else 'cpu')
+    # scaler = GradScaler('cuda' if device.type == 'cuda' else 'cpu', enabled=False)
     running_loss = 0.0
 
     for blur_batch, sharp_batch in train_loader:
         # blur_batch shape: [B, 3, 256, 256] - already cropped patches from Dataset
-        blur_batch = blur_batch.to(device)
-        sharp_batch = sharp_batch.to(device)
+        blur_batch = blur_batch.to(device, non_blocking=True)
+        sharp_batch = sharp_batch.to(device, non_blocking=True)
         
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         
         # Forward pass with pre-augmented patches
-        device_type = 'cuda' if device.type == 'cuda' else 'cpu'
-        with autocast(device_type=device_type):
-            outputs = model(blur_batch)
-            loss = criterion(outputs, sharp_batch)
+        # device_type = 'cuda' if device.type == 'cuda' else 'cpu'
+
+        # with autocast(device_type=device_type):
+        #     outputs = model(blur_batch)
+        #     loss = criterion(outputs, sharp_batch)
+
+        outputs = model(blur_batch)
+        loss = criterion(outputs, sharp_batch)
         
         # Scale loss and backward pass
-        scaler.scale(loss).backward()
+        # scaler.scale(loss).backward()
         
-        # Gradient clipping (unscales gradients first)
-        scaler.unscale_(optimizer)
+        # # Gradient clipping (unscales gradients first)
+        # scaler.unscale_(optimizer)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
+        # # Optimizer step with scaler
+        # scaler.step(optimizer)
+        # scaler.update()
+        loss.backward()
+        
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
-        # Optimizer step with scaler
-        scaler.step(optimizer)
-        scaler.update()
+        optimizer.step()
         
         running_loss += loss.item()
     
@@ -326,7 +334,6 @@ def evaluate(model, val_loader, criterion, device):
     running_psnr = 0.0
     running_ssim = 0.0
     running_loss = 0.0
-    valid_batches = 0
     
     with torch.no_grad():
         for blur_batch, sharp_batch in val_loader:
@@ -336,46 +343,22 @@ def evaluate(model, val_loader, criterion, device):
             
             # Forward pass
             outputs = model(blur_batch)
-            
-            # CRITICAL FIX: Check for NaN/Inf before metrics calculation
-            if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                logging.warning(f"NaN/Inf detected in model outputs during evaluation, skipping batch")
-                continue
                 
             val_loss = criterion(outputs, sharp_batch)
             
-            # CRITICAL FIX: Check if loss is valid
-            if torch.isnan(val_loss) or torch.isinf(val_loss):
-                logging.warning(f"NaN/Inf detected in loss during evaluation, skipping batch")
-                continue
-            
             # Calculate metrics with error handling
-            try:
-                psnr_val, ssim_val = calculate_metrics(outputs, sharp_batch)
+
+            psnr_val, ssim_val = calculate_metrics(outputs, sharp_batch)
                 
-                # CRITICAL FIX: Validate metric values
-                if np.isnan(psnr_val) or np.isinf(psnr_val) or np.isnan(ssim_val) or np.isinf(ssim_val):
-                    logging.warning(f"Invalid metrics: PSNR={psnr_val}, SSIM={ssim_val}, skipping batch")
-                    continue
-                    
-                running_psnr += psnr_val
-                running_ssim += ssim_val
-                running_loss += val_loss.item()
-                valid_batches += 1
-            except Exception as e:
-                logging.warning(f"Error calculating metrics: {e}, skipping batch")
-                continue
-    
-    # CRITICAL FIX: Handle case where all batches failed
-    if valid_batches == 0:
-        logging.error("All validation batches failed! Returning fallback values")
-        return torch.tensor(999.0), 0.0, 0.0
-    
-    avg_psnr = running_psnr / valid_batches
-    avg_ssim = running_ssim / valid_batches
-    avg_loss = running_loss / valid_batches
-    
-    logging.info(f"Evaluated {valid_batches}/{len(val_loader)} batches successfully")
+
+            running_psnr += psnr_val
+            running_ssim += ssim_val
+            running_loss += val_loss.item()
+
+    avg_loss = running_loss / len(val_loader)
+    avg_psnr = running_psnr / len(val_loader)
+    avg_ssim = running_ssim / len(val_loader)
+
     return avg_loss, avg_psnr, avg_ssim
 
 def create_model_signature(model, device):
