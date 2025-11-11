@@ -387,7 +387,7 @@ def infer_large_image(model, img_pil, device, tile_size=256, overlap=64):
         model: Trained deblurring model
         img_pil: PIL Image of any size
         device: torch device
-        tile_size: Size of tiles (256 to matches training)
+        tile_size: Size of tiles (256 to match training)
         overlap: Overlap between tiles (64 = 25% overlap recommended)
     """
     model.eval()
