@@ -1,504 +1,587 @@
-## PyTorch Installation and GPU/CPU Compatibility
+# Image Deblurring Project - Technical Documentation
 
-<code>$env:PYTHONPATH = "C:\Users\as2491\git\image_deblurring"<code>
+**Last Updated:** November 11, 2025
 
-### Understanding PyTorch Versions
+---
 
-PyTorch comes in two main variants:
-- **CPU-only version** (`torch-2.x.x+cpu`): Smaller download, runs only on CPU
-- **CUDA version** (`torch-2.x.x+cu121`): Larger download, runs on both GPU and CPU
+## Table of Contents
 
-**Important:** The CUDA version automatically detects available hardware and uses GPU when available, falling back to CPU when not. This means you can train on GPU and deploy to CPU-only environments (like Azure Functions) using the same installation.
+1. [Environment Setup](#environment-setup)
+2. [Model Architecture](#model-architecture)
+3. [Training Pipeline](#training-pipeline)
+4. [Hyperparameters](#hyperparameters)
+5. [Loss Functions](#loss-functions)
+6. [Tiling & Stitching](#tiling--stitching)
+7. [Experiment Tracking](#experiment-tracking)
+8. [Deployment](#deployment)
 
-### Installation on Windows with Python 3.10
+---
 
-**Problem:** If you create `requirements.txt` on a Linux machine and try to install on Windows, you'll encounter:
-1. **Platform-specific packages**: Some NVIDIA packages are Linux-only (`nvidia-cufile-cu12`, `nvidia-nccl-cu12`, `nvidia-nvshmem-cu12`)
-2. **CPU vs GPU version confusion**: `pip install torch` defaults to CPU-only version on Windows
+## Environment Setup
 
-**Solution: Install CUDA-enabled PyTorch**
+### PyTorch Installation (Windows + Python 3.10)
 
-#### Step 1: Remove CPU-only version (if installed)
 ```powershell
-pip uninstall -y torch torchvision
-```
+# Set Python path
+$env:PYTHONPATH = "C:\Users\as2491\git\image_deblurring"
 
-#### Step 2: Install CUDA version from PyTorch repository
-```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-```
-
-This installs:
-- `torch-2.5.1+cu121` (CUDA 12.1 compatible)
-- `torchvision-0.20.1+cu121`
-- All necessary CUDA libraries automatically
-
-#### Step 3: Verify installation
-```powershell
-python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
-```
-
-**Expected output on GPU machine:**
-```
-PyTorch: 2.5.1+cu121
-CUDA available: True
-Device: NVIDIA GeForce RTX 4070
-```
-
-**Expected output on CPU machine (e.g., Azure Functions):**
-```
-PyTorch: 2.5.1+cu121
-CUDA available: False
-Device: CPU
-```
-
-### GPU Requirements
-
-**Minimum Requirements:**
-- NVIDIA GPU with CUDA Compute Capability 3.5+
-- NVIDIA Driver version 450.80.02+ (Linux) or 452.39+ (Windows)
-- CUDA 12.1 or 12.2 compatible driver
-
-**Recommended for This Project:**
-- 8GB+ VRAM (RTX 3070, RTX 4070, or better)
-- 12GB+ VRAM for larger batch sizes (batch_size=16-32)
-
-**Check GPU availability:**
-```powershell
-nvidia-smi  # Shows GPU status, memory, driver version
-```
-
-### Training vs Inference Device Selection
-
-The code automatically selects the best available device:
-
-```python
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-input_tensor = input_tensor.to(device)
-```
-
-**Training (local machine with GPU):**
-- Detects CUDA → Uses GPU
-- ~10-50x faster than CPU
-- Required for reasonable training times
-
-**Inference (Azure Functions, CPU-only):**
-- No CUDA detected → Uses CPU
-- Slower but acceptable for single-image inference
-- Same model weights, same code, no modifications needed
-
-### Performance Comparison
-
-**256×256 Patch Processing Time:**
-- **GPU (RTX 4070)**: ~5-10ms per patch
-- **CPU (Azure Functions)**: ~100-200ms per patch
-
-**Full 2048×2048 Image (with tiling):**
-- **GPU (RTX 4070)**: ~99ms total
-- **CPU (Azure Functions)**: ~2-5 seconds total
-
-### Troubleshooting
-
-**Issue: "using device: cpu" when GPU is available**
-
-**Cause:** CPU-only PyTorch version installed
-
-**Solution:**
-```powershell
-# Check current version
-python -c "import torch; print(torch.__version__)"
-
-# If output shows "+cpu" (e.g., "2.9.0+cpu"), reinstall:
+# Install CUDA-enabled PyTorch
 pip uninstall -y torch torchvision
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Verify fix
-python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+# Verify
+python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 ```
 
-## Tiling and Stitching
+**Key Points:**
+- CUDA version works on both GPU and CPU (auto-detects)
+- Training requires GPU (RTX 4070: 12GB VRAM)
+- Inference works on CPU (Azure Functions)
 
-### Techniques Used:
-- **Tiling:** Sliding window with overlap (64 pixels default)
-- **Stitching:** Linear feathering (weighted blending with edge ramps)
+**Performance:**
+- GPU: ~99ms for 2048×2048 image
+- CPU: ~2-5s for same image
 
-### Device Compatibility:
-The tiling and stitching functions are device-agnostic and work on both GPU and CPU. This is important as both functions will be used in the training process (GPU) and for inference (CPU-based on Azure Function).
-
-- `tile_tensor()` uses tensor slicing and preserves the input device automatically
-- `stitch_tiles()` creates output tensors on the same device as input tiles: `device=out_tiles[0].device`
-- `create_blend_weight()` creates weight maps that are moved to the appropriate device during stitching
-
-### Linear Feathering Benefits:
-- Reduces edge artifacts from CNN processing
-- Smooth transitions between tiles (no visible seams)
-- Better handling of U-Net's limited receptive field at tile edges
-- 10-20% better visual quality compared to uniform averaging
-
-## Ingestion Pipeline
-
-### Data Structure:
-The input for training is composed of pairs of sharp-blurry images from the GoPro dataset. The `DeblurDataset` class loads these pairs and extracts random 256×256 patches directly in the `__getitem__` method.
-
-### Optimized Data Loading Architecture (v2 - Current)
-
-**Problem with Original Approach:**
-The initial implementation loaded full 1280×720 images into DataLoader batches, then extracted 256×256 patches in the training loop. This resulted in:
-- **94% memory waste**: Loading 1280×720 (921,600 pixels) but using only 256×256 (65,536 pixels)
-- **Slow training**: Denormalize → PIL conversion → patch extraction → re-normalize overhead
-- **DataLoader bottleneck**: Workers loading unnecessarily large images
-
-**Optimized Solution:**
-Moved patch extraction and augmentation into `DeblurDataset.__getitem__()` so DataLoader directly provides training-ready 256×256 patches.
-
-**Architecture Flow:**
-
-**Before (Inefficient):**
-```
-Dataset.__getitem__()
-  ↓ Load 1280×720 image (921,600 pixels)
-  ↓ Apply normalization transform
-  ↓ Return to DataLoader
-DataLoader
-  ↓ Batch full images [B, 3, 720, 1280]
-  ↓ Transfer to GPU (massive memory usage)
-train() function
-  ↓ Denormalize each image
-  ↓ Convert tensor → PIL
-  ↓ Extract random 256×256 patch
-  ↓ Apply augmentation
-  ↓ Convert PIL → tensor
-  ↓ Re-normalize
-  ↓ Stack patches [B, 3, 256, 256]
-  ↓ Forward pass (discard 94% of loaded data!)
-```
-
-**After (Optimized):**
-```
-Dataset.__getitem__()
-  ↓ Load 1280×720 image
-  ↓ Extract random 256×256 patch (PIL domain)
-  ↓ Apply augmentation (PIL domain)
-  ↓ Apply normalization transform
-  ↓ Return 256×256 patch
-DataLoader
-  ↓ Batch patches [B, 3, 256, 256]
-  ↓ Transfer to GPU (6% of original memory)
-train() function
-  ↓ Forward pass directly
-  ↓ Backward pass
-```
-
-**Performance Gains:**
-- **94% reduction in DataLoader memory**: From 921,600 to 65,536 pixels per image
-- **Faster epoch time**: No denormalize/PIL/re-normalize overhead
-- **Cleaner code**: Training loop only handles forward/backward passes
-- **Same flexibility**: Random crop + augmentation still happens each epoch
-
-**Implementation Details:**
-
-**1. DeblurDataset Enhancements:**
-```python
-class DeblurDataset(Dataset):
-    def __init__(self, data_dir, transform=None, patch_size=256, is_training=True):
-        self.patch_size = patch_size      # Default 256×256
-        self.is_training = is_training    # Enable augmentation for training only
-    
-    def __getitem__(self, idx):
-        # Load full images
-        blur_img = Image.open(blur_path).convert('RGB')
-        sharp_img = Image.open(sharp_path).convert('RGB')
-        
-        # Extract random patches BEFORE DataLoader batching
-        blur_patch, sharp_patch = self._extract_random_patch(blur_img, sharp_img)
-        
-        # Apply augmentation (only for training)
-        if self.is_training:
-            blur_patch, sharp_patch = self._apply_augmentation(blur_patch, sharp_patch)
-        
-        # Apply normalization transform
-        if self.transform:
-            blur_patch = self.transform(blur_patch)
-            sharp_patch = self.transform(sharp_patch)
-        
-        return blur_patch, sharp_patch  # Returns 256×256 patches
-```
-
-**2. Simplified Training Loop:**
-```python
-def train(model, train_loader, criterion, optimizer, device):
-    model.train()
-    for blur_batch, sharp_batch in train_loader:
-        # blur_batch shape: [B, 3, 256, 256] - already cropped and augmented!
-        blur_batch = blur_batch.to(device)
-        sharp_batch = sharp_batch.to(device)
-        
-        optimizer.zero_grad()
-        outputs = model(blur_batch)
-        loss = criterion(outputs, sharp_batch)
-        loss.backward()
-        optimizer.step()
-```
-
-**3. Augmentation in Dataset:**
-The `_apply_augmentation()` method applies synchronized transformations to both blur and sharp patches:
-- Horizontal flip (50% probability)
-- Vertical flip (50% probability)
-- Random 90° rotations (0°, 90°, 180°, 270°)
-
-All transformations are synchronized (same random choices for blur and sharp) and performed in PIL domain before normalization.
-
-### Training Patch Extraction:
-- **One patch per image per epoch** - `_extract_random_patch()` called in `__getitem__()`
-- **Random location each epoch** - Different patch extracted every epoch for data augmentation
-- **Synchronized patches** - Blur and sharp patches extracted from same location
-- **Batch composition** - Batch size of 4 means 4 images → 4 random 256×256 patches
-
-### On-The-Fly Data Augmentation
-
-The training pipeline implements **geometric augmentation** applied randomly to each extracted patch in the `DeblurDataset._apply_augmentation()` method, providing additional data diversity without disk storage overhead:
-
-**Augmentation Techniques:**
-
-**1. Horizontal Flip (50% probability)**
-```python
-if random.random() > 0.5:
-    blur_patch = TF.hflip(blur_patch)
-    sharp_patch = TF.hflip(sharp_patch)
-```
-- Mirrors image left-to-right
-- Doubles effective dataset size
-- Safe for motion blur (preserves blur characteristics)
-
-**2. Vertical Flip (50% probability)**
-```python
-if random.random() > 0.5:
-    blur_patch = TF.vflip(blur_patch)
-    sharp_patch = TF.vflip(sharp_patch)
-```
-- Mirrors image top-to-bottom
-- Further increases dataset diversity
-- Combined with horizontal flip: 4x orientation variations
-
-**3. 90° Rotations (25% probability each: 0°, 90°, 180°, 270°)**
-```python
-k = random.choice([0, 1, 2, 3])  # 0=no rotation, 1=90°, 2=180°, 3=270°
-if k > 0:
-    blur_tensor = TF.to_tensor(blur_patch)
-    sharp_tensor = TF.to_tensor(sharp_patch)
-    
-    blur_tensor = torch.rot90(blur_tensor, k=k, dims=[1, 2])
-    sharp_tensor = torch.rot90(sharp_tensor, k=k, dims=[1, 2])
-    
-    blur_patch = TF.to_pil_image(blur_tensor)
-    sharp_patch = TF.to_pil_image(sharp_tensor)
-```
-- Rotates in 90° increments
-- Helps model learn rotation invariance
-- No interpolation artifacts (integer rotations only)
-
-**Key Properties:**
-- **Synchronized augmentation**: Blur and sharp patches receive identical transformations
-- **Zero disk overhead**: Augmentation happens in Dataset during loading
-- **Infinite variations**: Different random augmentation each epoch
-- **Preserves blur characteristics**: Only geometric transforms (no scaling/color jittering)
-- **Effective dataset multiplier**: ~4-8x effective dataset size
-- **Applied before normalization**: Augmentation works in PIL domain [0, 255]
-
-**Benefits:**
-- Reduces overfitting by increasing training data diversity
-- Improves model generalization to different image orientations
-- No preprocessing required (augmentation integrated into Dataset)
-- Complements random patch extraction for maximum data augmentation
-
-**Training Flow:**
-```python
-for epoch in range(num_epochs):
-    for blur_patch, sharp_patch in dataloader:  
-        # Patches already extracted and augmented by Dataset!
-        # blur_patch shape: [B, 3, 256, 256]
-        # sharp_patch shape: [B, 3, 256, 256]
-        
-        # Direct forward pass - no preprocessing needed
-        output = model(blur_patch)
-        loss = criterion(output, sharp_patch)
-        loss.backward()
-        optimizer.step()
-```
-
-### Summary:
-- Batch size = 4-8 images
-- One random 256×256 patch extracted from each image in Dataset
-- Augmentation applied in Dataset before batching
-- Result: 4-8 pre-augmented patches per training batch
-- Different random locations and augmentations each epoch
-
-## Training Configuration
-
-### Optimizer: AdamW
-The project uses **AdamW** (Adam with decoupled weight decay) as the optimizer for the following reasons:
-
-- **Adaptive Learning Rates**: Automatically adjusts per-parameter learning rates, crucial for complex U-Net architecture where different layers (encoder vs decoder, early vs late) may need different learning rates
-- **Robust to Stochastic Gradients**: Handles noisy gradients from random patch extraction well due to momentum smoothing
-- **Mixed Precision Compatibility**: Works seamlessly with `torch.cuda.amp` for mixed precision training, maintaining stable convergence with fp16
-- **Industry Standard**: Proven track record in image restoration tasks - most deblurring papers use Adam/AdamW
-- **Better Weight Decay**: AdamW implements decoupled weight decay, which helps prevent overfitting better than standard Adam
-
-**Configuration:**
-```python
-optimizer = optim.AdamW(
-    model.parameters(),
-    lr=1e-4,              # Conservative starting point
-    weight_decay=1e-4     # Helps prevent overfitting
-)
-```
-
-### Loss Function and Metrics
-
-**Training Loss: CharbonnierLoss**
-- Custom implementation of Charbonnier loss (smooth L1 variant) 
-- More robust to outliers than MSE
-- Better gradient properties for image restoration
-- Formula: `sqrt((pred - target)^2 + epsilon^2)`
-- Used during backpropagation to optimize model weights
-
-**Evaluation Metrics:**
-- **PSNR (Peak Signal-to-Noise Ratio)**: Measures pixel-level accuracy, higher is better (typical range: 25-35 dB for deblurring)
-- **SSIM (Structural Similarity Index)**: Measures perceptual quality and structural similarity, ranges from 0 to 1 (higher is better)
-- Both metrics compare model output against ground truth sharp images
-- Computed on validation set to monitor training progress
-- Used for model selection and performance reporting
+---
 
 ## Model Architecture
 
-### DeblurUNet Design
-The project uses a **U-Net architecture** with the following key design choices:
+### DeblurUNet (U-Net Variant)
 
-**Network Structure:**
-- **Encoder:** 4 downsampling blocks with MaxPooling (32→64→128→256 channels)
-- **Bottleneck:** 512 channels at the deepest level
-- **Decoder:** 4 upsampling blocks with skip connections (256→128→64→32 channels)
-- **Input/Output:** 3-channel RGB images (3→3 mapping)
-- **Base channels:** 32 (configurable parameter)
+**Structure:** 4-level encoder-decoder with skip connections
+
+```python
+class DeblurUNet(nn.Module):
+    # Encoder: 32 → 64 → 128 → 256 channels
+    # Bottleneck: 512 channels
+    # Decoder: 256 → 128 → 64 → 32 channels
+    # Final: 1×1 conv to 3 channels (NO activation)
+```
 
 **Key Design Choices:**
 
-**1. No Final Activation Function**
+| Choice | Reason |
+|--------|--------|
+| **No final activation** | Allows flexible output range, better gradients, prevents over-smoothing |
+| **GroupNorm (8 groups)** | Stable with small batch sizes (works with batch=8) |
+| **Bilinear upsample + conv** | Avoids checkerboard artifacts from TransposeConv |
+| **Skip connections** | Preserves fine details from encoder |
+
+**Model Stats:**
+- Parameters: 8.6M
+- Input: [B, 3, 256, 256] (RGB patches)
+- Output: [B, 3, 256, 256] (deblurred, unconstrained range)
+- Post-processing: Clamp to [-1, 1] for display
+
+**Why No Activation?**
 ```python
-self.final = nn.Conv2d(base_ch, out_ch, kernel_size=1)
-# No Sigmoid/Tanh - outputs raw values
+# Final layer
+out = self.final(d1)  # Raw conv output
+out = torch.clamp(out, -1, 1)  # Clamp ONLY during inference
+return out
 ```
 
-**Rationale:**
-- **Image restoration standard:** Modern deblurring models (DeblurGAN, MPRNet, NAFNet, Restormer) do NOT use final activations
-- **Normalization compatibility:** Images are normalized to [-1, 1] range; raw output learns this scale naturally
-- **Better gradient flow:** No saturation issues from Tanh/Sigmoid, enabling faster convergence
-- **Loss function compatibility:** CharbonnierLoss works best with unbounded predictions
-- **Superior training dynamics:** Model learns proper output scale without artificial constraints
+- **Training:** Unrestricted outputs enable better gradient flow
+- **Inference:** Clamping ensures valid pixel values
+- **Validation:** Outputs naturally stay in [-1.5, 1.5] due to loss function
 
-**When final activations ARE used:**
-- **Sigmoid [0, 1]:** Classification tasks, binary masks, probabilities
-- **Tanh [-1, 1]:** When explicit range constraint is critical (trades gradient flow for guarantees)
+---
 
-**2. GroupNorm Instead of BatchNorm**
+## Training Pipeline
+
+### Data Loading (GoPro Dataset)
+
+**Optimized Memory Strategy:**
+
 ```python
-self.norm1 = nn.GroupNorm(8, out_ch)  # 8 groups
+class DeblurDataset:
+    def __getitem__(self, idx):
+        # Load 1280×720 image
+        blur_img = Image.open(blur_path)
+        
+        # Extract 256×256 patch IMMEDIATELY
+        patch = random_crop(blur_img, 256)
+        
+        # Augment (flips, 90° rotations)
+        augmented = apply_augmentation(patch)
+        
+        # Normalize to [-1, 1]
+        return transform(augmented)
 ```
 
-**Advantages:**
-- **Small batch size robustness:** Works well with batch_size=4-8 (BatchNorm requires 16+)
-- **Consistent normalization:** Statistics computed per sample, not across batch
-- **Better for image restoration:** Less sensitive to batch composition variations
-- **Inference stability:** No train/eval mode discrepancy
+**Memory Savings:** 94% reduction (921,600 → 65,536 pixels per batch item)
 
-**3. Bilinear Upsampling + Conv**
+**Augmentation:**
+- Horizontal flip (50%)
+- Vertical flip (50%)
+- 90° rotations (25% each: 0°, 90°, 180°, 270°)
+- All synchronized between blur/sharp pairs
+
+### Training Loop
+
 ```python
-self.up = nn.Sequential(
-    nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-    nn.Conv2d(in_ch, out_ch, 3, padding=1)
-)
+for epoch in range(num_epochs):
+    # 1. Train
+    for blur, sharp in train_loader:
+        outputs = model(blur)
+        loss = criterion(outputs, sharp)
+        loss.backward()
+        clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+    
+    # 2. Evaluate
+    val_loss, val_psnr, val_ssim = evaluate(model, val_loader)
+    
+    # 3. Save best checkpoint
+    if val_psnr > best_psnr:
+        save_checkpoint(f'best_model_epoch_{epoch}_psnr_{val_psnr:.2f}.pth')
+    
+    # 4. Update learning rate
+    scheduler.step()
+    
+    # 5. Early stopping
+    if patience_exceeded:
+        break
 ```
 
-**Advantages over TransposeConv2d:**
-- **No checkerboard artifacts:** Bilinear interpolation is smooth
-- **More stable training:** Fewer learned parameters in upsampling path
-- **Better fine detail preservation:** Separates upsampling from feature learning
+---
 
-**4. Skip Connections with Robustness**
+## Hyperparameters
+
+### Final Configuration
+
 ```python
-if x.shape[-2:] != skip.shape[-2:]:
-    skip = F.interpolate(skip, size=x.shape[-2:], mode='nearest')
-x = torch.cat([x, skip], dim=1)
+# Core settings
+batch_size = 24              # Max for 12GB VRAM
+learning_rate = 2e-4         # AdamW sweet spot
+num_epochs = 200             # With early stopping
+patience = 50                # Early stopping threshold
+
+# Optimization
+optimizer = AdamW(lr=2e-4, weight_decay=1e-4)
+scheduler = CosineAnnealingLR(T_max=200, eta_min=1e-6)
+gradient_clip = 1.0          # Prevents exploding gradients
+
+# Loss
+alpha = 0.84                 # MS-SSIM weight
+beta = 0.16                  # Charbonnier weight
+```
+
+### Rationale
+
+**Batch Size (24):**
+- GPU Memory: ~10.5GB / 12GB used
+- MS-SSIM stability: Needs batch_size ≥ 16
+- Trade-off: Larger = more stable, but batch_size=32 causes OOM
+
+**Learning Rate (2e-4):**
+- Too high (1e-3): Unstable, oscillations
+- Too low (1e-5): Slow convergence (200+ epochs)
+- 2e-4: Fast, stable convergence (~50-100 epochs)
+
+**Gradient Clipping (1.0):**
+- **What:** Limits L2 norm of all gradients: `||g|| ≤ max_norm`
+- **Why:** Prevents exploding gradients in deep U-Net
+- **Impact:** Training stability, enables higher LR
+
+**Without clipping:**
+```
+Epoch 27: train_loss=47.2, val_psnr=0.0  ← Explosion!
+Epoch 28: train_loss=NaN  ← Crashed
+```
+
+**With clipping:**
+```
+Epoch 27: grad_norm=1.35 → clipped to 1.0
+Training continues smoothly
+```
+
+**CosineAnnealingLR:**
+- Smooth decay: 2e-4 → 1e-6 over 200 epochs
+- No manual tuning needed
+- Better than step decay (no sudden drops)
+
+---
+
+## Loss Functions
+
+### Evolution: Charbonnier → Combined Loss
+
+**Initial:** Charbonnier Loss (Smooth L1)
+
+```python
+class CharbonnierLoss(nn.Module):
+    def forward(self, pred, target):
+        diff = pred - target
+        return torch.mean(torch.sqrt(diff**2 + epsilon**2))
+```
+
+**Pros:** Robust to outliers, good PSNR (~24-25 dB)  
+**Cons:** Over-smooths edges, poor perceptual quality
+
+**Final:** Combined Loss (MS-SSIM + Charbonnier)
+
+```python
+class CombinedLoss(nn.Module):
+    def __init__(self, alpha=0.84, beta=0.16):
+        self.ms_ssim = MS_SSIM(data_range=2.0, channel=3)
+        
+    def forward(self, pred, target):
+        # Clamp to prevent NaN
+        pred = torch.clamp(pred, -1, 1)
+        target = torch.clamp(target, -1, 1)
+        
+        # MS-SSIM with fallback
+        try:
+            ms_ssim_val = self.ms_ssim(pred, target)
+            ms_ssim_loss = 1 - torch.clamp(ms_ssim_val, 0, 1)
+        except:
+            ms_ssim_loss = torch.mean(torch.abs(pred - target))
+        
+        # Charbonnier
+        diff = pred - target
+        charbonnier = torch.mean(torch.sqrt(diff**2 + epsilon**2))
+        
+        return alpha * ms_ssim_loss + beta * charbonnier
+```
+
+**Why 84% MS-SSIM / 16% Charbonnier?**
+- MS-SSIM: Perceptual quality, structure preservation
+- Charbonnier: Pixel accuracy, stable gradients
+- 84/16 ratio: Empirically best for edge sharpness
+
+**Error Handling:**
+- MS-SSIM can fail with small batches or NaN values
+- Fallback to Charbonnier ensures training continues
+- Detailed logging tracks failures
+
+**Results:**
+- Charbonnier only: PSNR 24.5 dB, blurry edges
+- Combined: PSNR 26.8 dB, sharp edges, better SSIM
+
+---
+
+## Tiling & Stitching
+
+### Problem: Training vs Inference Size Mismatch
+
+- **Training:** 256×256 patches (memory efficient)
+- **Inference:** Arbitrary sizes (1920×1080, 2048×2048, etc.)
+
+### Solution: Sliding Window with Overlap
+
+**Tiling (Input → Tiles):**
+
+```python
+def tile_tensor(img, tile_size=512, overlap=64):
+    stride = tile_size - overlap  # 448
+    tiles = []
+    coords = []
+    
+    for y in range(0, H, stride):
+        for x in range(0, W, stride):
+            tile = img[:, :, y:y+tile_size, x:x+tile_size]
+            tiles.append(tile)
+            coords.append((x, y, x+tile_size, y+tile_size))
+    
+    return tiles, coords
+```
+
+**Example:** 1920×1080 image → 12 tiles (4×3 grid)
+
+**Stitching (Tiles → Output):**
+
+```python
+def stitch_tiles(tiles, coords, image_shape, overlap=64):
+    output = torch.zeros(image_shape)
+    weight = torch.zeros(image_shape)
+    
+    for tile, (x1, y1, x2, y2) in zip(tiles, coords):
+        # Create feathering weight map
+        tile_weight = create_blend_weight(tile.shape, overlap)
+        
+        # Weighted accumulation
+        output[:, y1:y2, x1:x2] += tile * tile_weight
+        weight[:, y1:y2, x1:x2] += tile_weight
+    
+    return output / weight  # Normalize
+```
+
+**Feathering (Linear Blend):**
+
+```
+Weight map for tile with 64px overlap:
+
+1.0 ┤         ████████████         Center
+0.5 ┤      ██              ██      
+0.0 ┤██                        ██  Edges
+    └──────────────────────────────
+    0    64              448    512
+
+Overlap regions blend linearly between tiles
+```
+
+**Why Overlap?**
+- Prevents visible seams at tile boundaries
+- Reduces CNN edge artifacts
+- 64px (12.5%) overlap is optimal
+
+**Usage:**
+
+```python
+# Training: Direct patches
+patch = dataset[idx]  # 256×256
+
+# Inference: Tiled processing
+tiles, coords = tile_tensor(large_image, tile_size=512, overlap=64)
+outputs = [model(tile) for tile in tiles]
+result = stitch_tiles(outputs, coords, large_image.shape, overlap=64)
+```
+
+**Performance:**
+- Tile size: 512×512 (larger than training for efficiency)
+- Overlap: 64px (balance quality vs compute)
+- Device-agnostic: Works on GPU and CPU
+
+---
+
+## Experiment Tracking
+
+### MLflow Integration
+
+**Setup:**
+
+```python
+import mlflow
+
+mlflow.start_run()
+
+# Log hyperparameters
+mlflow.log_param("batch_size", 24)
+mlflow.log_param("learning_rate", 2e-4)
+
+# Training loop
+for epoch in range(num_epochs):
+    mlflow.log_metric("train_loss", loss, step=epoch)
+    mlflow.log_metric("psnr", psnr, step=epoch)
+    mlflow.log_metric("ssim", ssim, step=epoch)
+
+# Save model
+mlflow.pytorch.log_model(model, "deblur_model", 
+                         signature=signature)
+mlflow.end_run()
 ```
 
 **Benefits:**
-- **Flexible input sizes:** Handles non-power-of-2 dimensions gracefully
-- **Training stability:** Prevents shape mismatch errors during development
-- **Gradient flow:** Preserves fine details from encoder to decoder
 
-**Model Complexity:**
-- **Parameters:** ~8.6M trainable parameters
-- **Memory:** ~780 MB GPU memory for 256×256 RGB batch
-- **Inference speed:** ~99ms for 2048×2048 image (with tiling)
+| Feature | Value |
+|---------|-------|
+| **Parameter tracking** | All hyperparameters logged automatically |
+| **Metric visualization** | Interactive charts for 50+ experiments |
+| **Model versioning** | Complete history with Git commit hash |
+| **Reproducibility** | Environment snapshot (requirements.txt) |
+| **Comparison** | Side-by-side run comparison |
 
-## Experiment Tracking with MLflow
+**UI Access:**
 
-### Why MLflow?
-The project uses **MLflow** for comprehensive experiment tracking and model management:
-
-**Key Advantages:**
-- **Automatic Experiment Tracking**: All hyperparameters, metrics, and models are logged automatically without manual record-keeping
-- **Easy Comparison**: Compare multiple training runs side-by-side to identify which configurations work best
-- **Model Versioning**: Each model is saved with its exact hyperparameters, preventing confusion about which version performed best
-- **Reproducibility**: Tracks code versions, Python environment, and random seeds for full reproducibility
-- **Professional Standard**: Industry-standard tool used at companies like Netflix, Microsoft, and Databricks
-- **Local Storage**: All data stored locally in `mlruns/` folder - no cloud account or internet required
-- **Built-in Visualization**: Free dashboard for viewing training progress and comparing experiments
-
-**What Gets Tracked:**
-```python
-# Hyperparameters
-mlflow.log_param("batch_size", 8)
-mlflow.log_param("learning_rate", 1e-4)
-mlflow.log_param("num_epochs", 100)
-mlflow.log_param("patience", 5)
-
-# Metrics per epoch
-mlflow.log_metric("train_loss", train_loss, step=epoch)
-mlflow.log_metric("val_loss", val_loss, step=epoch)
-mlflow.log_metric("psnr", val_psnr, step=epoch)
-mlflow.log_metric("ssim", val_ssim, step=epoch)
-
-# Model artifacts
-mlflow.pytorch.log_model(model, artifact_path="deblur_model")
-```
-
-### Accessing the MLflow UI
-
-**Launch the dashboard:**
-```bash
+```powershell
 mlflow ui
+# → http://localhost:5000
 ```
 
-Then open `http://localhost:5000` in your browser.
+**Model Signature:**
 
-**Features Available:**
-- **Experiments View**: See all training runs with their metrics and parameters
-- **Comparison Mode**: Select multiple runs to compare side-by-side
-- **Metric Charts**: Visualize loss, PSNR, and SSIM curves over epochs
-- **Model Registry**: Access and download any trained model version
-- **Search/Filter**: Find specific runs by metric ranges or parameter values
-- **Export Results**: Download data for reports or presentations
+```python
+def create_model_signature(model, device):
+    example = torch.randn(1, 3, 256, 256).to(device)
+    output = model(example)
+    return infer_signature(example.cpu().numpy(), 
+                          output.cpu().numpy())
+```
 
-**Example Use Cases:**
-- Compare PSNR across different batch sizes (8 vs 16 vs 32)
-- Identify which learning rate converged fastest
-- Track improvement over 50+ experiment iterations
-- Present results to professors or in portfolio interviews
-- Verify which model achieved the best validation metrics
+**Stores:**
+- Input shape: [B, 3, 256, 256]
+- Output shape: [B, 3, 256, 256]
+- Data types: float32
 
-## implement model checkpoints
+---
 
-- every 10 epochs
-- considering the long training required, its a valid contingency method to accomodate for preserving training progress.
+## Checkpointing Strategy
+
+### Best-Model-Only Approach
+
+```python
+best_psnr = 0.0
+
+for epoch in range(num_epochs):
+    val_psnr = evaluate(model, val_loader)
+    
+    if val_psnr > best_psnr:
+        best_psnr = val_psnr
+        
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'psnr': val_psnr,
+            'ssim': val_ssim
+        }
+        
+        path = f'checkpoints/best_model_epoch_{epoch}_psnr_{val_psnr:.2f}.pth'
+        torch.save(checkpoint, path)
+```
+
+**Why Best-Only?**
+- Minimal disk usage (~10-20 files vs 200)
+- Automatic selection (highest PSNR in filename)
+- Prevents overfitting (saves peak performance)
+
+**Example Progression:**
+
+```
+best_model_epoch_1_psnr_22.23.pth
+best_model_epoch_10_psnr_25.79.pth
+best_model_epoch_53_psnr_26.80.pth  ← Final best
+```
+
+**Loading:**
+
+```python
+checkpoint = torch.load('checkpoints/best_model_epoch_53_psnr_26.80.pth')
+model.load_state_dict(checkpoint['model_state_dict'])
+```
+
+---
+
+## Training Results
+
+### Final Performance
+
+| Metric | Value |
+|--------|-------|
+| **Best PSNR** | 26.80 dB (epoch 53) |
+| **Best SSIM** | 0.77 |
+| **Training Time** | 2-8 hours (RTX 4070) |
+| **Convergence** | 50-100 epochs |
+| **Total Runs** | 50+ experiments |
+
+### Training Curve (Typical)
+
+```
+PSNR Progress:
+
+27 ┤                      ──────  ← Plateau at 26.8
+26 ┤                 ─────
+25 ┤            ─────
+24 ┤       ─────
+23 ┤  ─────
+22 ┼─
+   0    50   100   150   200 epochs
+   
+   Early stopping triggered at epoch ~80-120
+```
+
+### Key Lessons
+
+**What Worked:**
+- ✅ Combined loss (MS-SSIM + Charbonnier)
+- ✅ Gradient clipping (prevents crashes)
+- ✅ Patch extraction in Dataset (94% memory savings)
+- ✅ Best-model checkpointing
+- ✅ Error handling in loss function
+
+**What Failed:**
+- ❌ Charbonnier-only loss (poor edges)
+- ❌ No gradient clipping (crashes at epoch 27)
+- ❌ Batch size 32 (OOM error)
+- ❌ Learning rate 1e-3 (unstable)
+- ❌ No MS-SSIM error handling (training crashes)
+
+---
+
+## Deployment
+
+### Model Export
+
+```python
+# Load best checkpoint
+checkpoint = torch.load('checkpoints/best_model_epoch_53_psnr_26.80.pth')
+model.load_state_dict(checkpoint['model_state_dict'])
+
+# Log to MLflow
+signature = create_model_signature(model, device)
+mlflow.pytorch.log_model(
+    model, 
+    artifact_path="deblur_model",
+    registered_model_name="deblur_model_v4",
+    signature=signature
+)
+```
+
+### Azure Functions Integration
+
+**Inference Pipeline:**
+
+```python
+def run_inference(img_tensor, model):
+    # Tiled processing for large images
+    tiles, coords = tile_tensor(img_tensor, tile_size=512, overlap=64)
+    
+    outputs = []
+    for tile in tiles:
+        with torch.no_grad():
+            output = model(tile)
+        outputs.append(output)
+    
+    result = stitch_tiles(outputs, coords, img_tensor.shape, overlap=64)
+    return result
+```
+
+**Device Compatibility:**
+- Training: GPU (CUDA)
+- Deployment: CPU (Azure Functions)
+- Same PyTorch installation works for both
+
+---
+
+## Quick Reference
+
+### Commands
+
+```powershell
+# Training
+python src/train.py --train_data data/train --test_data data/val --registered_model_name deblur_v4 --batch_size 24 --num_epochs 200 --learning_rate 0.0002 --patience 50
+
+# MLflow UI
+mlflow ui
+
+# Verify GPU
+nvidia-smi
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+### File Structure
+
+```
+image_deblurring/
+├── src/
+│   ├── train.py              # Training script
+│   ├── model_class.py        # DeblurUNet
+│   ├── enhanced_loss.py      # CombinedLoss
+│   ├── utils.py              # Tiling, metrics
+│   └── data_ingestion.py     # Dataset
+├── checkpoints/              # Best models
+├── mlruns/                   # MLflow artifacts
+└── documentation/
+    └── doc.md                # This file
+```
+
+### Key Metrics
+
+| Phase | Metric | Target |
+|-------|--------|--------|
+| **Training** | Train Loss | < 0.10 |
+| **Validation** | PSNR | > 26 dB |
+| **Validation** | SSIM | > 0.75 |
+| **Inference** | Speed (GPU) | < 100ms |
+| **Inference** | Speed (CPU) | < 5s |
