@@ -37,7 +37,7 @@ def main():
 
                 generated_image.save(output_path)
             except Exception as e:
-                print(f"Failed with exception: {e}")
+                print(f"Failed to process file '{filename}' with exception: {e}")
                 continue
 
 
