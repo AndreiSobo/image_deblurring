@@ -4,18 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Deblurring Application</title>
+    <meta name="description" content="AI-powered image deblurring application using deep learning and Azure cloud services">
+    <title>AI Image Deblurring | Deep Learning Portfolio Project</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
 </head>
 
 <body>
     <div class="container-fluid px-3 py-4">
+        <!-- Header Section -->
         <div class="row mb-4">
             <div class="col-12 text-center">
-                <h1 class="display-6 display-md-4">Image Deblurring Application</h1>
-                <p class="lead">AI-powered image deblurring using deep learning</p>
+                <h1 class="display-6 display-md-4">AI Image Deblurring</h1>
+                <p class="lead">Deep learning-powered image restoration using CNNs on Azure</p>
                 <div class="hero-icon">📸</div>
             </div>
         </div>
@@ -27,86 +29,136 @@
                     <!-- What Card -->
                     <div class="info-card" id="what-card">
                         <div class="info-card-header" onclick="toggleInfoCard('what')" tabindex="0" role="button"
-                            aria-expanded="false">
+                            aria-expanded="false" aria-label="What this project does - click to expand">
                             <span class="info-card-title">💡 What</span>
-                            <span class="info-card-arrow" id="what-arrow">▼</span>
+                            <span class="info-card-arrow" id="what-arrow" aria-hidden="true">▼</span>
                         </div>
                         <div class="info-card-body" id="what-body" style="display: none;">
-                            <h6>What This Project Does</h6>
-                            <p>This project demonstrates advanced computer vision techniques for image deblurring using
-                                deep learning models deployed on Azure cloud infrastructure. It automatically removes
-                                blur from images caused by motion, defocus, or other distortions.</p>
+                            <h6>What This Application Does</h6>
+                            <p>This web application uses a <strong>custom-trained U-Net convolutional neural network (CNN)</strong> to automatically restore sharpness to blurred images. It processes images of varying sizes using intelligent tiling and deploys the model as a serverless Azure Function for scalable, on-demand inference.</p>
+                            
+                            <h6 class="mt-3">Key Features:</h6>
                             <ul>
-                                <li><strong>AI-Powered Deblurring:</strong> Advanced CNN models for blur removal</li>
-                                <li><strong>Real-time Processing:</strong> Fast image enhancement in the cloud</li>
-                                <li><strong>Multiple Blur Types:</strong> Handles motion blur, defocus blur, and mixed
-                                    distortions</li>
-                                <li><strong>High-Quality Results:</strong> Preserves image details while removing blur
-                                </li>
+                                <li><strong>Deep Learning Deblurring:</strong> U-Net architecture with 4 encoder-decoder levels trained on the REDS dataset</li>
+                                <li><strong>Handles Multiple Blur Types:</strong> Motion blur, defocus blur, and camera shake</li>
+                                <li><strong>Variable Image Sizes:</strong> Processes images from 720p to 4K using overlapping tile inference</li>
+                                <li><strong>Cloud-Native Deployment:</strong> Serverless Azure Functions with base64 image encoding for HTTP transport</li>
+                                <li><strong>Real-Time Processing:</strong> 30-90 second inference time for typical mobile photos (CPU optimized)</li>
                             </ul>
+
+                            <p class="mt-3"><strong>Use Cases:</strong> Photography enhancement, restoring old photos, improving low-quality surveillance footage, and preprocessing for other computer vision tasks.</p>
                         </div>
                     </div>
 
                     <!-- How Card -->
                     <div class="info-card" id="how-card">
                         <div class="info-card-header" onclick="toggleInfoCard('how')" tabindex="0" role="button"
-                            aria-expanded="false">
+                            aria-expanded="false" aria-label="How this project works - click to expand">
                             <span class="info-card-title">⚙️ How</span>
-                            <span class="info-card-arrow" id="how-arrow">▼</span>
+                            <span class="info-card-arrow" id="how-arrow" aria-hidden="true">▼</span>
                         </div>
                         <div class="info-card-body" id="how-body" style="display: none;">
-                            <h6>How It Works - Technical Implementation</h6>
-                            <p><strong>Deep Learning Pipeline:</strong></p>
-                            <p class="text-center mb-3"><em>Image Upload → Preprocessing → CNN Model → Post-processing
-                                    → Enhanced Image</em></p>
-                            <p>This application uses a <strong>Convolutional Neural Network (CNN)</strong> trained on
-                                pairs of blurred and sharp images to learn the deblurring transformation.</p>
-                            <ol>
-                                <li><strong>Image Upload:</strong> User uploads a blurred image via the web interface
-                                </li>
-                                <li><strong>Preprocessing:</strong> Image is resized and normalized for model input</li>
-                                <li><strong>Model Inference:</strong> Deep learning model processes the image</li>
-                                <li><strong>Post-processing:</strong> Result is enhanced and formatted for display</li>
-                                <li><strong>Comparison View:</strong> Side-by-side display of original and deblurred
-                                    images</li>
-                            </ol>
-                            <p><strong>Architecture:</strong> Multi-layer CNN with skip connections, batch normalization,
-                                and attention mechanisms for optimal deblurring performance.</p>
+                            <h6>Technical Architecture & Implementation</h6>
+                            
+                            <p class="tech-pipeline"><strong>Data Pipeline:</strong><br>
+                            <code>User Upload → Base64 Encoding → Azure Function → U-Net Inference → Tile Stitching → Base64 Response → Display</code></p>
+
+                            <h6 class="mt-3">🧠 Deep Learning Model</h6>
+                            <ul>
+                                <li><strong>Architecture:</strong> Custom U-Net with 32 base channels, GroupNorm, and bilinear upsampling</li>
+                                <li><strong>Training Dataset:</strong> REDS dataset with 240 high-quality video sequences (blur + sharp pairs)</li>
+                                <li><strong>Loss Function:</strong> Combined L1 + SSIM loss for perceptual quality</li>
+                                <li><strong>Training Framework:</strong> PyTorch with MLflow experiment tracking</li>
+                                <li><strong>Optimization:</strong> AdamW optimizer with Cosine Annealing scheduler, early stopping at 50 epochs patience</li>
+                                <li><strong>Performance Metrics:</strong> PSNR (Peak Signal-to-Noise Ratio) and SSIM (Structural Similarity Index)</li>
+                            </ul>
+
+                            <h6 class="mt-3">☁️ Cloud Infrastructure</h6>
+                            <ul>
+                                <li><strong>Frontend:</strong> Azure Static Web Apps (HTML/CSS/JavaScript)</li>
+                                <li><strong>Backend:</strong> Azure Functions (Python runtime on Consumption plan)</li>
+                                <li><strong>Image Transport:</strong> Base64 encoding via HTTP POST requests (handles 1-3MB typical mobile photos)</li>
+                                <li><strong>Inference Strategy:</strong> 256×256 tile processing with 64px overlap and cosine-weighted blending</li>
+                                <li><strong>Resource Constraints:</strong> CPU-only inference (no GPU), 5-minute timeout, 1.5GB RAM limit</li>
+                            </ul>
+
+                            <h6 class="mt-3">🔧 Technical Challenges Solved</h6>
+                            <ul>
+                                <li>Handling variable image sizes without OOM errors using tile-based inference</li>
+                                <li>Implementing seamless tile stitching with cosine-weighted blending to avoid edge artifacts</li>
+                                <li>Optimizing U-Net architecture for CPU inference (lightweight base channels, GroupNorm instead of BatchNorm)</li>
+                                <li>Managing Azure Function cold starts and timeout constraints for images up to 1920×1080</li>
+                            </ul>
+
+                            <p class="mt-3"><em>Source code available on GitHub with full documentation of the training pipeline, model architecture, and deployment configuration.</em></p>
                         </div>
                     </div>
 
                     <!-- Why Card -->
                     <div class="info-card" id="why-card">
                         <div class="info-card-header" onclick="toggleInfoCard('why')" tabindex="0" role="button"
-                            aria-expanded="false">
+                            aria-expanded="false" aria-label="Why this project matters - click to expand">
                             <span class="info-card-title">🎯 Why</span>
-                            <span class="info-card-arrow" id="why-arrow">▼</span>
+                            <span class="info-card-arrow" id="why-arrow" aria-hidden="true">▼</span>
                         </div>
                         <div class="info-card-body" id="why-body" style="display: none;">
-                            <h6>Why This Project Matters</h6>
-                            <p>This project showcases <strong>computer vision expertise</strong>, <strong>deep learning
-                                    implementation</strong>, and <strong>cloud deployment capabilities</strong> for
-                                real-world image enhancement applications.</p>
-                            <div class="row">
+                            <h6>Project Purpose & Skills Demonstrated</h6>
+                            <p>This portfolio project showcases <strong>end-to-end machine learning engineering</strong>, from research and training to production deployment, demonstrating skills essential for ML/AI engineering roles.</p>
+
+                            <div class="row mt-3">
                                 <div class="col-md-6">
-                                    <h6 class="text-primary">🔬 Computer Vision</h6>
+                                    <h6 class="text-primary">🤖 Machine Learning & Deep Learning</h6>
                                     <ul>
-                                        <li>Advanced CNN architectures</li>
-                                        <li>Image processing pipelines</li>
-                                        <li>Quality assessment metrics</li>
+                                        <li><strong>Computer Vision:</strong> Image-to-image translation, U-Net architecture design</li>
+                                        <li><strong>Model Training:</strong> Dataset preparation, hyperparameter tuning, loss function engineering</li>
+                                        <li><strong>Experiment Tracking:</strong> MLflow for model versioning and metrics logging</li>
+                                        <li><strong>Performance Optimization:</strong> Learning rate scheduling, gradient clipping, early stopping</li>
+                                        <li><strong>Evaluation Metrics:</strong> PSNR, SSIM for quantitative quality assessment</li>
                                     </ul>
                                 </div>
                                 <div class="col-md-6">
-                                    <h6 class="text-primary">☁️ Cloud Integration</h6>
+                                    <h6 class="text-primary">☁️ Cloud Engineering & DevOps</h6>
                                     <ul>
-                                        <li>Azure Static Web Apps hosting</li>
-                                        <li>Serverless model inference</li>
-                                        <li>Scalable image processing</li>
+                                        <li><strong>Azure Services:</strong> Azure Functions, Static Web Apps, serverless architecture</li>
+                                        <li><strong>Model Deployment:</strong> PyTorch model serialization, CPU inference optimization</li>
+                                        <li><strong>API Design:</strong> RESTful HTTP endpoints with base64 image encoding</li>
+                                        <li><strong>Resource Management:</strong> Working within cloud constraints (memory, timeout, cold starts)</li>
+                                        <li><strong>Cost Optimization:</strong> Using Azure for Students free tier effectively</li>
                                     </ul>
                                 </div>
                             </div>
-                            <p><strong>Real-World Applications:</strong> Photography enhancement, medical imaging,
-                                surveillance systems, and autonomous vehicle perception systems.</p>
+
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <h6 class="text-primary">💻 Software Engineering</h6>
+                                    <ul>
+                                        <li>Python best practices (type hints, error handling, modular design)</li>
+                                        <li>PyTorch DataLoader optimization for large datasets</li>
+                                        <li>Object-oriented design for maintainable ML code</li>
+                                        <li>Git version control and project documentation</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-primary">🎨 Full-Stack Development</h6>
+                                    <ul>
+                                        <li>Responsive web design (mobile-first CSS)</li>
+                                        <li>JavaScript async/await patterns for API calls</li>
+                                        <li>UX design (drag-and-drop, progress indicators, error handling)</li>
+                                        <li>Accessibility (ARIA labels, keyboard navigation)</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <h6 class="mt-4">🌟 Real-World Impact</h6>
+                            <p>This project demonstrates the ability to:</p>
+                            <ul>
+                                <li>Translate academic research (U-Net) into production applications</li>
+                                <li>Navigate practical constraints (CPU-only inference, cloud timeouts, memory limits)</li>
+                                <li>Build user-friendly interfaces for complex ML models</li>
+                                <li>Document and communicate technical decisions clearly</li>
+                            </ul>
+
+                            <p class="mt-3"><strong>Target Roles:</strong> Machine Learning Engineer, Computer Vision Engineer, MLOps Engineer, AI Research Engineer, Data Scientist with deployment focus.</p>
                         </div>
                     </div>
                 </div>
@@ -118,22 +170,23 @@
             <div class="col-xl-8 offset-xl-2 col-lg-10 offset-lg-1 col-md-12">
                 <div class="card shadow">
                     <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">Image Deblurring Tool</h5>
+                        <h5 class="mb-0">🔧 Image Deblurring Tool</h5>
                     </div>
                     <div class="card-body">
                         <!-- Upload Section -->
                         <div class="upload-section mb-4">
                             <h6 class="mb-3">📁 Upload Your Blurred Image</h6>
-                            <div class="upload-area" id="upload-area">
+                            <div class="upload-area" id="upload-area" role="button" tabindex="0" 
+                                 aria-label="Upload image - click or drag and drop">
                                 <div class="upload-content">
                                     <div class="upload-icon">📷</div>
-                                    <h4>Drag & Drop Image Here</h4>
-                                    <p>or click to browse files</p>
+                                    <h4>Click to Upload or Drag & Drop Image Here</h4>
+                                    <p class="upload-subtitle">Browse files from your device</p>
                                     <div class="supported-formats">
-                                        <small>Supported formats: JPG, PNG, WebP (max 10MB)</small>
+                                        <small>✅ Supported: JPG, PNG, WebP | 📏 Max size: 10MB | 🖼️ Recommended: 1280×720 to 1920×1080</small>
                                     </div>
                                 </div>
-                                <input type="file" id="image-upload" accept="image/*" hidden>
+                                <input type="file" id="image-upload" accept="image/jpeg,image/png,image/webp" hidden aria-hidden="true">
                             </div>
                         </div>
 
@@ -142,8 +195,8 @@
                             <h6 class="mb-3">🖼️ Image Preview</h6>
                             <div class="image-preview-container">
                                 <div class="image-preview">
-                                    <img id="preview-image" src="" alt="Preview" class="img-fluid">
-                                    <div class="image-info" id="image-info"></div>
+                                    <img id="preview-image" src="" alt="Uploaded image preview" class="img-fluid">
+                                    <div class="image-info" id="image-info" role="status" aria-live="polite"></div>
                                 </div>
                             </div>
                         </div>
@@ -152,7 +205,7 @@
                         <div class="action-buttons mb-4" id="action-buttons" style="display: none;">
                             <div class="d-grid gap-2 d-md-flex justify-content-md-center">
                                 <button id="deblur-btn" class="btn btn-success btn-lg" type="button">
-                                    🔧 Deblur Image
+                                    ✨ Deblur Image
                                 </button>
                                 <button id="clear-btn" class="btn btn-outline-secondary btn-lg" type="button">
                                     🗑️ Clear Image
@@ -161,14 +214,18 @@
                         </div>
 
                         <!-- Processing Indicator -->
-                        <div id="processing" class="text-center my-4" style="display: none;">
+                        <div id="processing" class="text-center my-4" style="display: none;" role="status" aria-live="polite">
                             <div class="spinner-border text-primary" role="status">
                                 <span class="visually-hidden">Processing...</span>
                             </div>
-                            <p class="mt-2">Processing your image, please wait...</p>
+                            <p class="mt-3 processing-text">
+                                <strong>Processing your image with AI...</strong><br>
+                                <small class="text-muted">This may take 30-90 seconds depending on image size</small>
+                            </p>
                             <div class="progress mt-3">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                     role="progressbar" style="width: 0%" id="progress-bar"></div>
+                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                                     role="progressbar" style="width: 0%" id="progress-bar" 
+                                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                             </div>
                         </div>
 
@@ -179,22 +236,22 @@
                                 <div class="comparison-view">
                                     <div class="image-comparison">
                                         <div class="comparison-item">
-                                            <h6>Original (Blurred)</h6>
-                                            <img id="original-result" src="" alt="Original" class="img-fluid">
+                                            <h6>📥 Original (Blurred)</h6>
+                                            <img id="original-result" src="" alt="Original blurred image" class="img-fluid">
                                         </div>
-                                        <div class="comparison-arrow">→</div>
+                                        <div class="comparison-arrow" aria-hidden="true">→</div>
                                         <div class="comparison-item">
-                                            <h6>Enhanced (Deblurred)</h6>
-                                            <img id="deblurred-result" src="" alt="Deblurred" class="img-fluid">
+                                            <h6>✨ Enhanced (Deblurred)</h6>
+                                            <img id="deblurred-result" src="" alt="AI-enhanced deblurred image" class="img-fluid">
                                         </div>
                                     </div>
                                 </div>
-                                <div class="results-actions mt-3">
+                                <div class="results-actions mt-4">
                                     <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-                                        <button id="download-btn" class="btn btn-primary" type="button">
+                                        <button id="download-btn" class="btn btn-primary btn-lg" type="button">
                                             💾 Download Enhanced Image
                                         </button>
-                                        <button id="new-image-btn" class="btn btn-outline-primary" type="button">
+                                        <button id="new-image-btn" class="btn btn-outline-primary btn-lg" type="button">
                                             🆕 Process New Image
                                         </button>
                                     </div>
@@ -204,10 +261,37 @@
 
                         <!-- Status Messages -->
                         <div class="status-container" id="status-container">
-                            <div id="status-message" class="h4 text-center text-muted">Upload an image to get started</div>
+                            <div id="status-message" class="status-message status-info" role="status" aria-live="polite">
+                                📤 Upload or drag & drop an image to get started
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Technical Notes -->
+                <div class="card shadow mt-4">
+                    <div class="card-body">
+                        <h6 class="text-primary">ℹ️ Technical Notes</h6>
+                        <ul class="small text-muted mb-0">
+                            <li><strong>Processing Time:</strong> Typical images (1280×720) take 30-45 seconds. Larger images (1920×1080) may take 60-90 seconds.</li>
+                            <li><strong>Image Size Limits:</strong> Maximum 10MB file size. For best results, use images between 720p and 1080p resolution.</li>
+                            <li><strong>Supported Formats:</strong> JPEG, PNG, and WebP. Images are automatically converted to RGB format.</li>
+                            <li><strong>Privacy:</strong> All processing is done on-demand. Images are not stored permanently on the server.</li>
+                            <li><strong>Model:</strong> Custom U-Net trained on the REDS dataset with ~2-5M parameters, optimized for CPU inference.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="row mt-5">
+            <div class="col-12 text-center">
+                <p class="text-muted">
+                    <small>Built with PyTorch, Azure Functions, and Azure Static Web Apps | 
+                    <a href="https://github.com/yourusername/image-deblurring" target="_blank" rel="noopener">View Source Code</a>
+                    </small>
+                </p>
             </div>
         </div>
     </div>
