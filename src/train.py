@@ -26,8 +26,8 @@ def main():
     parser.add_argument('--test_data', type=str, required=True, help='path to val data')
     parser.add_argument('--registered_model_name', type=str, required=True)
     parser.add_argument('--batch_size', type=int, default=24)
-    parser.add_argument('--num_epochs', type=int, default=200)
-    parser.add_argument('--learning_rate', type=float, default=2e-4)  # REDUCED from 0.002
+    parser.add_argument('--num_epochs', type=int, default=500)
+    parser.add_argument('--learning_rate', type=float, default=2e-4)
     parser.add_argument('--patience', type=int, default=50)
 
     args = parser.parse_args()
@@ -163,11 +163,12 @@ def main():
 
             # Note: Checkpoint saved locally, not logged to MLflow to avoid artifact URI issues
             # Can be logged manually later if needed
-            logging.info(f"💾 Checkpoint saved: {checkpoint_path}")
+            logging.info(f"Checkpoint saved: {checkpoint_path}")
 
             # update the patience counter
             patience_counter = 0
-            logging.info(f"✅ New best model! PSNR: {val_psnr:.2f} dB, SSIM: {val_ssim:.4f} at epoch: {epoch+1}")
+            logging.info(f"New best model! PSNR: {val_psnr:.2f} dB, SSIM: {val_ssim:.4f} at epoch: {epoch+1}")
+            print(f"New best model! PSNR: {val_psnr:.2f}, SSIM: {val_ssim:.4f}, at epoch: {epoch+1}")
         else:
             patience_counter +=1
         
@@ -180,6 +181,7 @@ def main():
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
         logging.info(f"Loaded best model with PSNR: {best_current_psnr:.2f} dB, SSIM: {best_current_ssim:.4f}")
+        print(f"Loaded best model with PSNR: {best_current_psnr:.2f} dB, SSIM: {best_current_ssim:.4f}")
     
     # Log the best model to MLflow
     signature = create_model_signature(model, device)

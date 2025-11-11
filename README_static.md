@@ -11,11 +11,10 @@ The website for the webapp is: https://ashy-ocean-05d988603.3.azurestaticapps.ne
 - **Quick Processing**: Fast image deblurring using deep learning models
 - **Comparison View**: Side-by-side display of original and enhanced images
 - **Download Results**: Save enhanced images locally
-- **Accessibility**: Full keyboard navigation and screen reader support
 
 ## Technology Stack
 
-- **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
+- **Frontend**: HTML5, CSS, JavaScript (Vanilla)
 - **Hosting**: Azure Static Web Apps
 - **Backend**: Azure Functions (Python) - *To be implemented*
 - **Convolutional Neural Network Model**: CNN for image deblurring - *To be integrated*
