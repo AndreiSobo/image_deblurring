@@ -56,23 +56,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Validate file type
         if (!file.type.startsWith('image/')) {
-            showStatusMessage('Please select a valid image file.', 'error');
+            showStatusMessage('Please select a valid image file (JPG, PNG, WebP).', 'error');
             return;
         }
 
         // Validate file size (max 10MB)
         const maxSize = 10 * 1024 * 1024; // 10MB in bytes
         if (file.size > maxSize) {
-            showStatusMessage('File size must be less than 10MB.', 'error');
+            showStatusMessage('File size must be less than 10MB. Please resize your image.', 'error');
             return;
         }
 
         currentImageFile = file;
-        previewImage(file);
+        previewImageFile(file);
     }
 
     // Preview selected image
-    function previewImage(file) {
+    function previewImageFile(file) {
         const reader = new FileReader();
         
         reader.onload = function(e) {
@@ -88,11 +88,13 @@ document.addEventListener('DOMContentLoaded', function () {
             updateImageInfo(file);
             
             // Add visual feedback
-            previewSection.scrollIntoView({ behavior: 'smooth' });
+            previewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            showStatusMessage('Image loaded successfully! Click "Deblur Image" to process.', 'success');
         };
         
         reader.onerror = function() {
-            showStatusMessage('Error reading the image file.', 'error');
+            showStatusMessage('Error reading the image file. Please try again.', 'error');
         };
         
         reader.readAsDataURL(file);
@@ -106,11 +108,16 @@ document.addEventListener('DOMContentLoaded', function () {
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             const sizeText = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
             
+            // Check if image is very large and warn user
+            const warningText = (img.width > 2000 || img.height > 2000) 
+                ? '<br><span style="color: #ff9800;">⚠️ Large image - processing may take 60-90 seconds</span>' 
+                : '';
+            
             imageInfo.innerHTML = `
                 <strong>📁 ${file.name}</strong><br>
                 📏 ${img.width} × ${img.height} pixels<br>
                 💾 ${sizeText}<br>
-                🎨 ${file.type}
+                🎨 ${file.type}${warningText}
             `;
         };
         img.src = currentImage;
@@ -140,7 +147,9 @@ document.addEventListener('DOMContentLoaded', function () {
         uploadArea.addEventListener('drop', handleDrop, false);
         
         // Handle click to upload
-        uploadArea.addEventListener('click', () => imageUpload.click());
+        uploadArea.addEventListener('click', () => {
+            imageUpload.click();
+        });
         
         // Handle file input change
         imageUpload.addEventListener('change', (e) => {
@@ -193,20 +202,23 @@ document.addEventListener('DOMContentLoaded', function () {
         actionButtons.style.display = 'none';
         resultsSection.style.display = 'none';
         
+        // Scroll to processing section
+        processing.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
         // Simulate progress
         let progress = 0;
         const progressInterval = setInterval(() => {
-            progress += Math.random() * 15;
-            if (progress > 90) progress = 90;
+            progress += Math.random() * 10;
+            if (progress > 85) progress = 85;
             updateProgress(progress);
-        }, 300);
+        }, 400);
 
         // For now, simulate the API call with mock data
         // In production, this would be replaced with actual Azure Function call
         const useMockData = true; // Set to false when actual API is available
 
         if (useMockData) {
-            // Simulate processing delay
+            // Simulate processing delay (realistic for CPU inference)
             setTimeout(() => {
                 clearInterval(progressInterval);
                 updateProgress(100);
@@ -217,12 +229,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     handleDeblurringResponse({
                         success: true,
                         original_image: currentImage,
-                        deblurred_image: currentImage, // Would be actual deblurred image
-                        processing_time: 2.3,
-                        quality_improvement: 0.85
+                        deblurred_image: currentImage, // Would be actual deblurred image from Azure
+                        processing_time: (Math.random() * 30 + 15).toFixed(1), // 15-45 seconds
+                        quality_improvement: (Math.random() * 0.3 + 0.7).toFixed(2) // 0.7-1.0
                     });
                 }, 500);
-            }, 3000);
+            }, 3500); // 3.5 second demo delay
         } else {
             // Actual API call (to be implemented when Azure Function is ready)
             callDeblurAPI(currentImageFile)
@@ -240,12 +252,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Call the deblurring API (placeholder for future implementation)
     async function callDeblurAPI(imageFile) {
-        const formData = new FormData();
-        formData.append('image', imageFile);
-
+        // Convert image to base64
+        const base64Image = await fileToBase64(imageFile);
+        
         const response = await fetch(API_CONFIG.deblur, {
             method: 'POST',
-            body: formData
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: base64Image
+            })
         });
 
         if (!response.ok) {
@@ -253,6 +270,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         return await response.json();
+    }
+
+    // Helper function to convert file to base64
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // Remove the data URL prefix to get just the base64 string
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
     }
 
     // Handle successful deblurring response
@@ -272,10 +303,15 @@ document.addEventListener('DOMContentLoaded', function () {
             resultsSection.style.display = 'block';
             
             // Scroll to results
-            resultsSection.scrollIntoView({ behavior: 'smooth' });
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             
-            // Show success message
-            showStatusMessage(`Deblurring completed successfully! Processing time: ${data.processing_time || 'N/A'}s`, 'success');
+            // Show success message with metrics
+            const timeText = data.processing_time ? `${data.processing_time}s` : 'N/A';
+            const qualityText = data.quality_improvement ? `${(data.quality_improvement * 100).toFixed(0)}%` : 'N/A';
+            showStatusMessage(
+                `✅ Deblurring completed! Processing time: ${timeText} | Quality improvement: ${qualityText}`, 
+                'success'
+            );
         } else {
             handleDeblurringError(new Error(data.message || 'Deblurring failed'));
         }
@@ -288,7 +324,7 @@ document.addEventListener('DOMContentLoaded', function () {
         processing.style.display = 'none';
         actionButtons.style.display = 'block';
         
-        showStatusMessage(`Deblurring failed: ${error.message}`, 'error');
+        showStatusMessage(`❌ Deblurring failed: ${error.message}. Please try again or use a smaller image.`, 'error');
     }
 
     // Update progress bar
@@ -302,7 +338,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Clear current image and reset interface
     clearBtn.addEventListener('click', function() {
-        resetInterface();
+        if (confirm('Are you sure you want to clear the current image?')) {
+            resetInterface();
+        }
     });
 
     newImageBtn.addEventListener('click', function() {
@@ -326,7 +364,10 @@ document.addEventListener('DOMContentLoaded', function () {
         imageUpload.value = '';
         updateProgress(0);
         
-        showStatusMessage('Upload an image to get started', 'info');
+        showStatusMessage('📤 Upload or drag & drop an image to get started', 'info');
+        
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // Download enhanced image
@@ -339,34 +380,37 @@ document.addEventListener('DOMContentLoaded', function () {
         // Create download link
         const link = document.createElement('a');
         link.href = deblurredImageData;
-        link.download = `enhanced_${currentImageFile ? currentImageFile.name : 'image.jpg'}`;
+        link.download = `deblurred_${currentImageFile ? currentImageFile.name : 'image.jpg'}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         
-        showStatusMessage('Enhanced image downloaded successfully!', 'success');
+        showStatusMessage('✅ Enhanced image downloaded successfully!', 'success');
     });
 
     // Show status message with type styling
     function showStatusMessage(message, type = 'info') {
-        statusMessage.className = 'h4 text-center';
+        statusMessage.className = 'status-message';
         
         switch (type) {
             case 'success':
-                statusMessage.className += ' text-success';
-                statusMessage.innerHTML = `✅ ${message}`;
+                statusMessage.className += ' status-success';
                 break;
             case 'error':
-                statusMessage.className += ' text-danger';
-                statusMessage.innerHTML = `❌ ${message}`;
+                statusMessage.className += ' status-error';
                 break;
             case 'warning':
-                statusMessage.className += ' text-warning';
-                statusMessage.innerHTML = `⚠️ ${message}`;
+                statusMessage.className += ' status-warning';
                 break;
             default:
-                statusMessage.className += ' text-muted';
-                statusMessage.innerHTML = message;
+                statusMessage.className += ' status-info';
+        }
+        
+        statusMessage.innerHTML = message;
+        
+        // Show status container if hidden
+        if (statusContainer.style.display === 'none') {
+            statusContainer.style.display = 'block';
         }
     }
 
@@ -376,7 +420,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function initializeMobileFeatures() {
         // Add touch feedback to all interactive elements
-        const interactiveElements = document.querySelectorAll('button, .upload-area');
+        const interactiveElements = document.querySelectorAll('button, .upload-area, .info-card-header');
 
         interactiveElements.forEach(element => {
             element.addEventListener('touchstart', function() {
@@ -395,11 +439,15 @@ document.addEventListener('DOMContentLoaded', function () {
             deblurBtn.addEventListener('click', () => {
                 navigator.vibrate(50);
             });
+            
+            downloadBtn.addEventListener('click', () => {
+                navigator.vibrate([30, 50, 30]);
+            });
         }
     }
 
     // =============================================================================
-    // Info Card Functionality (Reused from web_app)
+    // Info Card Functionality
     // =============================================================================
 
     function initializeInfoCardAccessibility() {
@@ -407,6 +455,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
         infoCardHeaders.forEach(header => {
+            // Add keyboard support
             header.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
@@ -428,20 +477,36 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    // Initialize with welcome message
+    showStatusMessage('📤 Upload or drag & drop an image to get started', 'info');
 });
 
-// Function to toggle information card visibility
+// =============================================================================
+// Info Card Toggle Function (Global scope for onclick handlers)
+// =============================================================================
+
 function toggleInfoCard(cardType) {
     const cardBody = document.getElementById(`${cardType}-body`);
     const cardArrow = document.getElementById(`${cardType}-arrow`);
     const cardHeader = document.querySelector(`#${cardType}-card .info-card-header`);
 
-    if (cardBody.style.display === 'none') {
+    // FIX: Check for both empty string and 'none' since CSS display may not be inline
+    const isHidden = cardBody.style.display === 'none' || cardBody.style.display === '';
+
+    if (isHidden) {
+        // Expand the card
         cardBody.style.display = 'block';
         cardArrow.textContent = '▲';
         cardArrow.setAttribute('aria-label', `Collapse ${cardType} explanation`);
         cardHeader.setAttribute('aria-expanded', 'true');
+        
+        // Smooth scroll to make expanded content visible
+        setTimeout(() => {
+            cardBody.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
     } else {
+        // Collapse the card
         cardBody.style.display = 'none';
         cardArrow.textContent = '▼';
         cardArrow.setAttribute('aria-label', `Expand ${cardType} explanation`);
