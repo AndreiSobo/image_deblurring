@@ -1,1 +1,13 @@
+.git*
+.vscode
+local.settings.json
+test
 .venv
+.env
+__pycache__
+*.pyc
+.pytest_cache
+checkpoints/
+data/
+notebooks/
+mlruns/

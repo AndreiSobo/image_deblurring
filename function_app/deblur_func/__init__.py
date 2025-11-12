@@ -4,95 +4,142 @@ import os
 import sys
 import time
 from typing import Tuple
-
 from PIL import Image
 import torch
 import torchvision.transforms as T
-
+from src.model_class import DeblurUNet
 import azure.functions as func  # Azure Functions Python runtime
+import logging
+import base64
+import io
+import json
+import time
+
+bp = func.Blueprint()
 
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from utils import tile_tensor, stitch_tiles
+from utils import tile_tensor, stitch_tiles, infer_large_image
 
 # Module-global model container so it persists across calls while instance is warm
 MODEL = None
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-TILE_SIZE = 512
-TILE_OVERLAP = 64  
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
 
-def load_model(model_path: str):
+def load_model():
     global MODEL
     if MODEL is not None:
-        return MODEL
-    # Replace with your model class import if needed
-    # from model_def import DeblurNet
-    # model = DeblurNet(...)
-    model = torch.load(model_path, map_location=DEVICE)
-    model.eval()
-    if DEVICE.type == "cuda":
-        model.to(DEVICE)
-    MODEL = model
+        try:
+            checkpoint_path = os.path.join(os.path.dirname(__file__), '../model/model.pth')
+            
+            model = DeblurUNet()
+
+            checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.to(DEVICE)
+            model.eval()
+            
+            MODEL = model
+            logging.info(f"model loaded successfully from checkpoint_path: {checkpoint_path}")
+        except Exception as e:
+            print(f"model was not loaded with exception: {e}")
     return MODEL
 
-def pil_to_tensor(img: Image.Image) -> torch.Tensor:
-    transform = T.Compose([
-        T.ToTensor(),  # [0,1]
-    ])
-    return transform(img).unsqueeze(0)  # 1CHW batch    # type: ignore
+@bp.route(route="imageDeblur", methods={"GET", "POST", "OPTIONS"}, auth_level=func.AuthLevel.ANONYMOUS)
+def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
+    """Deblurring function using the attached PyTorch model"""
+    logging.info("imageDeblur function processed a request")
 
-def tensor_to_pil(t: torch.Tensor) -> Image.Image:
-    t = t.clamp(0.0, 1.0).cpu().squeeze(0)
-    img = T.ToPILImage()(t)
-    return img
+    # CORS headers
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With"
+    }
 
-def run_inference(img_tensor: torch.Tensor, model: torch.nn.Module) -> torch.Tensor:
-    # img_tensor shape [1, C, H, W]
-    _, _, H, W = img_tensor.shape
-    if max(H, W) <= TILE_SIZE:
-        inp = img_tensor.to(DEVICE)
-        with torch.no_grad():
-            out = model(inp)
-        return out.cpu()
-    # tiled inference using utils functions
-    tiles, coords = tile_tensor(img_tensor, TILE_SIZE, TILE_OVERLAP)
-    out_tiles = []
-    for t in tiles:
-        t = t.to(DEVICE)
-        with torch.no_grad():
-            out_t = model(t)
-        out_tiles.append(out_t.cpu())
-    # Convert shape to tuple for type safety
-    img_shape = (img_tensor.shape[1], img_tensor.shape[2], img_tensor.shape[3])
-    stitched = stitch_tiles(out_tiles, coords, image_shape=img_shape, overlap=TILE_OVERLAP)
-    return stitched
-
-def preprocess_image_bytes(body: bytes) -> torch.Tensor:
-    img = Image.open(io.BytesIO(body)).convert("RGB")
-    tensor = pil_to_tensor(img)  # [1,C,H,W] float32 [0,1]
-    return tensor
-
-def postprocess_tensor_to_bytes(tensor: torch.Tensor, fmt="JPEG") -> bytes:
-    pil = tensor_to_pil(tensor)
-    buf = io.BytesIO()
-    pil.save(buf, format=fmt, quality=95)
-    return buf.getvalue()
-
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    start = time.time()
-    model_path = os.environ.get("MODEL_PATH", "model.pth")
+    if req.method == "OPTIONS":
+            return func.HttpResponse(status_code=204, headers=headers)
+    
+    start_time = time.time()
+    
     try:
-        load_model(model_path)
-    except Exception as e:
-        return func.HttpResponse(f"Model load error: {e}", status_code=500)
+        # get request body
+        req_body = req.get_json()
+        if not req_body:
+             return func.HttpResponse(
+                  json.dumps({"error": "Request body is required"}),
+                  status_code=400,
+                  headers=headers,
+                  mimetype="application/json"
+             )
+        
+        image_b64 = req_body.get('image')
 
-    try:
-        body = req.get_body()
-        inp_tensor = preprocess_image_bytes(body)
-        out_tensor = run_inference(inp_tensor, MODEL) #type: ignore
-        out_bytes = postprocess_tensor_to_bytes(out_tensor)
-        elapsed = time.time() - start
-        headers = {"Content-Type": "image/jpeg", "X-Inference-Time": f"{elapsed:.3f}s"}
-        return func.HttpResponse(body=out_bytes, headers=headers, status_code=200)
+        # validate 
+        if not image_b64:
+             return func.HttpResponse(
+                  json.dumps({
+                       "success": False,
+                       "error": "Image data is required in this field"
+                  }),
+                  status_code=400,
+                  headers=headers,
+                  mimetype="application/json"
+             )
+
+        # decode base 64 image
+        try:
+            image_data = base64.b64decode(image_b64)
+            image_pil = Image.open(io.BytesIO(image_data)).convert("RGB")
+        except Exception as e:
+            logging.error(f"Failed to decode image: {str(e)}")
+            return func.HttpResponse(
+                json.dumps({
+                    "success": False,
+                    "error": f"Invalid image data: {str(e)}"
+                }),
+                status_code=400,
+                headers=headers,
+                mimetype="application/json"
+            )
+
+        model = load_model()
+        
+        generated_image = infer_large_image(model=model, img_pil=image_pil, device=DEVICE)
+
+        # encode to base64
+        buffer = io.BytesIO()
+        generated_image.save(buffer, format='JPEG', quality=90)
+        img_string = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        processing_time = start_time - time.time()
+        
+        logging.info(f"Deblurring completed in {processing_time:x2f}")
+
+        # send image back
+        response = {
+            "success": True,
+            "deblurred_image": f"data:image/jpeg;base64,{img_string}",
+            "original_image": f"data:image/jpeg;base64,{image_b64}",
+            "processing_time": f"{processing_time:.1f}",
+            "image_size": f"{generated_image.size[0]}x{generated_image.size[1]}"
+        }
+        return func.HttpResponse(
+             json.dumps(response),
+             status_code=200,
+             headers=headers,
+             mimetype="application/json"
+        )
+        
+
     except Exception as e:
-        return func.HttpResponse(f"Inference error: {e}", status_code=500)
+        logging.exception("Error in deblur function: %s", e)
+        return func.HttpResponse(
+            json.dumps({
+                "success": False,
+                "error": str(e),
+                "message": "Deblurring failed"
+            }),
+            status_code=500,
+            headers=headers,
+            mimetype="application/json"
+        )
