@@ -2,7 +2,7 @@
 
 A modern, responsive web application for AI-powered image deblurring using Azure Static Web Apps and deep learning models.
 
-The website for the webapp is: https://ashy-ocean-05d988603.3.azurestaticapps.net/
+The website for the webapp is: https://black-forest-0e6a17503.3.azurestaticapps.net
 
 
 ## Features
@@ -20,7 +20,7 @@ The website for the webapp is: https://ashy-ocean-05d988603.3.azurestaticapps.ne
 - **Convolutional Neural Network Model**: CNN for image deblurring - *To be integrated*
 
 ## Resources
-https://ashy-ocean-05d988603.3.azurestaticapps.net/ - static webpage
+https://black-forest-0e6a17503.3.azurestaticapps.net/ - static webpage
 https://seungjunnah.github.io/Datasets/gopro.html - GoPro dataset and link to implementation
 
 

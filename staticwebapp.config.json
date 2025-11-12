@@ -26,12 +26,9 @@
             "statusCode": 200
         }
     },
-    "platform": {
-        "apiRuntime": "python:3.10"
-    },
     "globalHeaders": {
         "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: blob:;",
-        "Access-Control-Allow-Origin": "https://example.com",
+        "Access-Control-Allow-Origin": "https://ashy-ocean-05d988603.azurestaticapps.net",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
         "X-Content-Type-Options": "nosniff",
