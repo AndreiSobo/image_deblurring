@@ -70,9 +70,9 @@ def load_model():
                 logger.error(f"Model file not found at: {checkpoint_path}")
                 return None
             
-            model = _DeblurUNet()
+            model = _DeblurUNet()   #type: ignore
 
-            checkpoint = _torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+            checkpoint = _torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)  #type: ignore
             model.load_state_dict(checkpoint['model_state_dict'])
             model.to(DEVICE)
             model.eval()
@@ -132,7 +132,7 @@ def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
         # decode base 64 image
         try:
             image_data = base64.b64decode(image_b64)
-            image_pil = _Image.open(io.BytesIO(image_data)).convert("RGB")
+            image_pil = _Image.open(io.BytesIO(image_data)).convert("RGB") # type: ignore
         except Exception as e:
             logger.error(f"Failed to decode image: {str(e)}")
             return func.HttpResponse(
@@ -147,7 +147,7 @@ def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
 
         model = load_model()
         
-        generated_image = _infer_large_image(model=model, img_pil=image_pil, device=DEVICE)
+        generated_image = _infer_large_image(model=model, img_pil=image_pil, device=DEVICE) #type: ignore
 
         # encode to base64
         buffer = io.BytesIO()

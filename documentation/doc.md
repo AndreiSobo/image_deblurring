@@ -540,44 +540,128 @@ def run_inference(img_tensor, model):
 **Device Compatibility:**
 - Training: GPU (CUDA)
 - Deployment: CPU (Azure Functions)
-- Same PyTorch installation works for both
+- Different PyTorch builds required for each environment
 
-### PyTorch Version Compatibility (Important)
+### Azure Functions Deployment
 
-**Current Version Mismatch:**
+**Successful Deployment - November 17, 2025**
 
-| Environment | PyTorch | TorchVision | Notes |
-|-------------|---------|-------------|-------|
-| **Training (Windows)** | 2.9.0 (CUDA) | 0.24.0 | Model trained with these versions |
-| **Azure Functions (Linux)** | 2.4.1 (CPU) | 0.19.1 | Latest stable CPU build for Azure |
+The Azure Function was successfully deployed using Azure Functions Core Tools. The deployment process required specific configuration and dependency management to work within Azure's resource constraints.
 
-**Deployment Strategy:**
+#### Deployment Command
 
-Due to the version mismatch between training and deployment environments, the following approach will be taken:
+```bash
+cd function_app/
+func azure functionapp publish imageDeblur
+```
 
-1. **First Attempt:** Deploy existing model (trained with PyTorch 2.9.0) to Azure Functions running PyTorch 2.4.1
-   - Models are often backward compatible within the same major version
-   - State dict structure typically remains stable across minor versions
-   - If successful, no changes needed ✅
+#### Required Configuration Files
 
-2. **Fallback Plan:** If inference fails or produces incorrect results:
-   - Retrain the model using PyTorch 2.4.1 and TorchVision 0.19.1
-   - Update `requirements-windows.txt` to match Azure Function versions
-   - Ensures complete compatibility between training and deployment
-   - Trade-off: Slightly older PyTorch version, but proven Azure compatibility
+**1. local.settings.json** (Critical for deployment)
 
-**Why This Matters:**
-- PyTorch checkpoints include serialized model states that can be version-sensitive
-- Different PyTorch versions may have subtle differences in:
-  - Model serialization format
-  - Default layer behaviors
-  - Numerical precision
-- Azure Functions CPU builds lag behind latest CUDA builds for stability
+This file is required by Azure Functions Core Tools to detect the project type and runtime:
 
-**Recommendation:**
-- Monitor first deployment closely for any inference anomalies
-- Compare Azure Function outputs with local inference results
-- If outputs differ significantly, proceed with retraining using Azure-compatible versions
+```json
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "python"
+  }
+}
+```
+
+**Purpose:**
+- `FUNCTIONS_WORKER_RUNTIME`: Tells Azure Functions this is a Python project
+- Without this file, deployment fails with: `"Worker runtime cannot be 'None'"`
+- The file must be in the `function_app/` directory (same level as `function_app.py`)
+
+**2. requirements.txt** (Optimized for Azure)
+
+Azure Functions Consumption Plan has memory limitations during remote builds. The standard PyTorch package (797 MB) causes out-of-memory errors (exit code 137). Solution: Use CPU-only PyTorch builds.
+
+```txt
+azure-functions>=1.18.0
+Pillow>=12.0.0
+numpy>=2.0.0,<3.0.0
+scikit-image>=0.24.0
+scipy>=1.10.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+torchvision==0.19.1+cpu
+```
+
+**Key Points:**
+- **`--extra-index-url`** (not `--index-url`): Adds PyTorch's repository while keeping PyPI for other packages
+- **`+cpu` suffix**: Downloads CPU-only builds (~200 MB vs 797 MB)
+- **Order matters**: Place `--extra-index-url` after standard packages
+- **PyTorch 2.4.1**: Latest stable version compatible with Azure Functions Python 3.10
+
+#### Deployment Issues Encountered
+
+**Issue 1: Worker Runtime Detection**
+```
+Error: Worker runtime cannot be 'None'
+Solution: Create local.settings.json with FUNCTIONS_WORKER_RUNTIME="python"
+```
+
+**Issue 2: Out-of-Memory During Build**
+```
+Error: Exit code 137 while installing torch-2.4.1 (797.1 MB)
+Solution: Switch to torch==2.4.1+cpu (~200 MB) using --extra-index-url
+```
+
+**Issue 3: Package Repository Configuration**
+```
+Error: Could not find azure-functions (using --index-url)
+Solution: Use --extra-index-url instead to search both PyPI and PyTorch repos
+```
+
+#### PyTorch Version Strategy
+
+| Environment | PyTorch | TorchVision | Build Type | Notes |
+|-------------|---------|-------------|------------|-------|
+| **Training (Windows)** | 2.9.0 | 0.24.0 | CUDA 12.1 | GPU-accelerated training |
+| **Azure Functions (Linux)** | 2.4.1 | 0.19.1 | CPU-only | Optimized for deployment size |
+
+**Compatibility Result: ✅ Success**
+
+The model trained with PyTorch 2.9.0 (CUDA) was successfully deployed and runs on PyTorch 2.4.1 (CPU). PyTorch maintains backward compatibility for model state dicts across minor versions within the same major version (2.x).
+
+**Performance:**
+- CPU inference: ~2-5 seconds for 2048×2048 images
+- Sufficient for Azure Functions use case
+- No accuracy degradation observed
+
+#### Deployment Workflow Summary
+
+```bash
+# 1. Navigate to function app directory
+cd /home/andrei/git/image_deblurring/function_app
+
+# 2. Ensure local.settings.json exists with correct runtime
+cat local.settings.json
+# Should show: "FUNCTIONS_WORKER_RUNTIME": "python"
+
+# 3. Verify requirements.txt uses CPU-only PyTorch
+cat requirements.txt
+# Should include: --extra-index-url https://download.pytorch.org/whl/cpu
+#                 torch==2.4.1+cpu
+#                 torchvision==0.19.1+cpu
+
+# 4. Deploy to Azure
+func azure functionapp publish imageDeblur
+
+# 5. Test deployment
+curl https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/test
+```
+
+**Deployment Output:**
+- Remote build: ~2 minutes
+- Package size: ~500 MB (with CPU PyTorch)
+- Python version: 3.10.4 (auto-detected)
+- Function runtime: v4
+- Region: North Europe
 
 **Updated November 17, 2025**
 
@@ -597,6 +681,10 @@ mlflow ui
 # Verify GPU
 nvidia-smi
 python -c "import torch; print(torch.cuda.is_available())"
+
+# Azure Functions Deployment
+cd function_app/
+func azure functionapp publish imageDeblur
 ```
 
 ### File Structure
@@ -609,6 +697,14 @@ image_deblurring/
 │   ├── enhanced_loss.py      # CombinedLoss
 │   ├── utils.py              # Tiling, metrics
 │   └── data_ingestion.py     # Dataset
+├── function_app/             # Azure Functions deployment
+│   ├── function_app.py       # Main function app
+│   ├── host.json             # Function host config
+│   ├── requirements.txt      # Azure dependencies (CPU PyTorch)
+│   ├── local.settings.json   # Runtime configuration (required)
+│   ├── deblur_func/          # Deblur function blueprint
+│   ├── model/                # Deployed model files
+│   └── src/                  # Shared utilities
 ├── checkpoints/              # Best models
 ├── mlruns/                   # MLflow artifacts
 └── documentation/
@@ -630,3 +726,12 @@ image_deblurring/
 Inference is done both locally and via the Azure Function
 - locally, I use the inference_script.py to output images, the command for this is using the models saved by MLflow:
 <code>python -m src.inference_script --model_path "models:/deblurmodelv6/latest" --input_folder .\data\input\ --model_name "deblurmodelv6" --output_folder .\data\output\ --date "12-11"<code>
+
+### Azure Function
+
+Functions in imageDeblur:
+    imageDeblur - [httpTrigger]
+        Invoke url: https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur
+
+    test_function - [httpTrigger]
+        Invoke url: https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/test
