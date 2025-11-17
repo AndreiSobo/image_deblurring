@@ -542,6 +542,45 @@ def run_inference(img_tensor, model):
 - Deployment: CPU (Azure Functions)
 - Same PyTorch installation works for both
 
+### PyTorch Version Compatibility (Important)
+
+**Current Version Mismatch:**
+
+| Environment | PyTorch | TorchVision | Notes |
+|-------------|---------|-------------|-------|
+| **Training (Windows)** | 2.9.0 (CUDA) | 0.24.0 | Model trained with these versions |
+| **Azure Functions (Linux)** | 2.4.1 (CPU) | 0.19.1 | Latest stable CPU build for Azure |
+
+**Deployment Strategy:**
+
+Due to the version mismatch between training and deployment environments, the following approach will be taken:
+
+1. **First Attempt:** Deploy existing model (trained with PyTorch 2.9.0) to Azure Functions running PyTorch 2.4.1
+   - Models are often backward compatible within the same major version
+   - State dict structure typically remains stable across minor versions
+   - If successful, no changes needed ✅
+
+2. **Fallback Plan:** If inference fails or produces incorrect results:
+   - Retrain the model using PyTorch 2.4.1 and TorchVision 0.19.1
+   - Update `requirements-windows.txt` to match Azure Function versions
+   - Ensures complete compatibility between training and deployment
+   - Trade-off: Slightly older PyTorch version, but proven Azure compatibility
+
+**Why This Matters:**
+- PyTorch checkpoints include serialized model states that can be version-sensitive
+- Different PyTorch versions may have subtle differences in:
+  - Model serialization format
+  - Default layer behaviors
+  - Numerical precision
+- Azure Functions CPU builds lag behind latest CUDA builds for stability
+
+**Recommendation:**
+- Monitor first deployment closely for any inference anomalies
+- Compare Azure Function outputs with local inference results
+- If outputs differ significantly, proceed with retraining using Azure-compatible versions
+
+**Updated November 17, 2025**
+
 ---
 
 ## Quick Reference

@@ -1,0 +1,34 @@
+{
+    "routes": [
+        {
+            "route": "/api/deblur_func",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
+            "route": "/api/*",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
+            "route": "/imageDeblur",
+            "methods": [
+                "POST"
+            ],
+            "rewrite": "/api/deblur_func"
+        },
+        {
+            "route": "/*",
+            "serve": "/index.html",
+            "statusCode": 200
+        }
+    ],
+    "platformErrorOverrides": [
+        {
+            "errorType": "NotFound",
+            "serve": "/index.html"
+        }
+    ]
+}

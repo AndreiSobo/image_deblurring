@@ -29,7 +29,7 @@ def load_model():
     global MODEL
     if MODEL is not None:
         try:
-            checkpoint_path = os.path.join(os.path.dirname(__file__), '../model/model.pth')
+            checkpoint_path = os.path.join(os.path.dirname(__file__), '../model/deblurmodelv8.pth')
             
             model = DeblurUNet()
 

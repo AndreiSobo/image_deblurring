@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // API Configuration - Will be updated when Azure Function is deployed
     const API_CONFIG = {
-        deblur: 'https://your-deblur-function-url/api/DeblurImage' // To be updated
+        imageDeblur: 'https://your-deblur-function-url/api/DeblurImage' // To be updated
     };
 
     // =============================================================================
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Convert image to base64
         const base64Image = await fileToBase64(imageFile);
         
-        const response = await fetch(API_CONFIG.deblur, {
+        const response = await fetch(API_CONFIG.imageDeblur, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
