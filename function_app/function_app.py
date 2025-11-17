@@ -1,7 +1,5 @@
 import azure.functions as func
 import logging
-import sys
-import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -10,19 +8,21 @@ logger = logging.getLogger(__name__)
 # create Function instance
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-# Add current directory to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+logger.info("Function app initialized")
 
-logger.info(f"Python path: {sys.path}")
-logger.info(f"Current directory: {current_dir}")
+# Test function - simple HTTP trigger to verify deployment works
+@app.route(route="test", methods=["GET"])
+def test_function(req: func.HttpRequest) -> func.HttpResponse:
+    """Simple test function"""
+    logger.info("Test function called")
+    return func.HttpResponse("Test function works!", status_code=200)
 
-# register the endpoint
+# Register the blueprint - import happens at module level
+# Azure Functions v2 requires this to be at module level for discovery
 try:
     from deblur_func import bp as deblur_bp
     app.register_functions(deblur_bp)
     logger.info("Successfully registered deblur_func blueprint")
 except Exception as e:
-    logger.exception("Failed to register deblur_func blueprint: %s", e)
-    raise  # Re-raise to make the error visible
+    logger.error(f"Failed to register blueprint: {e}")
+    # Don't raise - let the test function still work
