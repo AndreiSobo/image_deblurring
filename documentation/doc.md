@@ -725,7 +725,7 @@ image_deblurring/
 
 Inference is done both locally and via the Azure Function
 - locally, I use the inference_script.py to output images, the command for this is using the models saved by MLflow:
-<code>python -m src.inference_script --model_path "models:/deblurmodelv6/latest" --input_folder .\data\input\ --model_name "deblurmodelv6" --output_folder .\data\output\ --date "12-11"<code>
+<code>python -m src.inference_script --model_path "models:/deblurmodelv6/latest" --input_folder .\data\input\ --model_name "deblurmodelv6" --output_folder .\data\output\ --date "12-11"<code> 
 
 ### Azure Function
 
