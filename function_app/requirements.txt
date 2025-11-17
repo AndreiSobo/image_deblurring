@@ -1,5 +1,8 @@
 azure-functions>=1.18.0
-torch==2.1.0
-torchvision==0.16.0
-Pillow==10.0.0
-numpy==1.24.3
+# PyTorch CPU-only for Azure Functions (Linux)
+# Using versions close to training env (torch 2.9.0, torchvision 0.24.0)
+# but with Azure-compatible versions
+torch==2.5.1
+torchvision==0.20.1
+Pillow==12.0.0
+numpy==2.0.2
