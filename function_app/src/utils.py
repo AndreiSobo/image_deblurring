@@ -15,7 +15,12 @@ import os
 from torch.amp.grad_scaler import GradScaler
 from torch.amp.autocast_mode import autocast
 from torch.nn.utils import clip_grad_norm_
-from mlflow.models.signature import infer_signature
+
+# Optional import for training only (not needed for inference)
+try:
+    from mlflow.models.signature import infer_signature
+except ImportError:
+    infer_signature = None  # Will be None in Azure Functions
 
 # Config
 DEFAULT_TILE_SIZE = 256
@@ -363,8 +368,11 @@ def evaluate(model, val_loader, criterion, device):
 
 def create_model_signature(model, device):
     """
-    Creates MLflow model signature
+    Creates MLflow model signature (training only)
     """
+    if infer_signature is None:
+        raise ImportError("MLflow is not installed. This function is only available during training.")
+    
     # Create example input matching actual training data shape
     # Shape: [1, 3, 256, 256] for batch_size=1, RGB (3 channels), 256x256 pixels
     example_input = torch.randn(1, 3, 256, 256).to(device)

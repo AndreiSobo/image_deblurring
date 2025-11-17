@@ -7,41 +7,68 @@ from typing import Tuple
 from PIL import Image
 import torch
 import torchvision.transforms as T
-from src.model_class import DeblurUNet
 import azure.functions as func  # Azure Functions Python runtime
 import logging
 import base64
-import io
 import json
-import time
 
-bp = func.Blueprint()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from utils import tile_tensor, stitch_tiles, infer_large_image
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, '..', 'src'))
+
+logger.info(f"Current directory: {current_dir}")
+logger.info(f"Source directory: {src_dir}")
+
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+    logger.info(f"Added {src_dir} to sys.path")
+
+# Import model and utilities
+try:
+    from model_class import DeblurUNet
+    from utils import tile_tensor, stitch_tiles, infer_large_image
+    logger.info("Successfully imported model_class and utils")
+except ImportError as e:
+    logger.error(f"Failed to import dependencies: {e}")
+    logger.error(f"sys.path: {sys.path}")
+    raise
+
+bp = func.Blueprint()
+logger.info("Blueprint created")
 
 # Module-global model container so it persists across calls while instance is warm
 MODEL = None
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logger.info(f"Using device: {DEVICE}")
 
 def load_model():
     global MODEL
-    if MODEL is not None:
+    if MODEL is None:  # Fixed: was "is not None"
         try:
-            checkpoint_path = os.path.join(os.path.dirname(__file__), '../model/deblurmodelv8.pth')
+            checkpoint_path = os.path.join(os.path.dirname(__file__), '..', 'model', 'deblurmodelv8.pth')
+            
+            logging.info(f"Attempting to load model from: {checkpoint_path}")
+            
+            if not os.path.exists(checkpoint_path):
+                logging.error(f"Model file not found at: {checkpoint_path}")
+                return None
             
             model = DeblurUNet()
 
-            checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+            checkpoint = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
             model.load_state_dict(checkpoint['model_state_dict'])
             model.to(DEVICE)
             model.eval()
             
             MODEL = model
-            logging.info(f"model loaded successfully from checkpoint_path: {checkpoint_path}")
+            logging.info(f"Model loaded successfully from: {checkpoint_path}")
         except Exception as e:
-            print(f"model was not loaded with exception: {e}")
+            logging.exception(f"Failed to load model: {e}")
+            return None
     return MODEL
 
 @bp.route(route="imageDeblur", methods={"GET", "POST", "OPTIONS"}, auth_level=func.AuthLevel.ANONYMOUS)
