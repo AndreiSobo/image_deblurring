@@ -1,14 +1,3 @@
-"""
-Improved utility functions for image deblurring project.
-
-Key improvements:
-1. Better error handling in metric calculations
-2. Clearer tensor/numpy conversions
-3. More robust tiling and stitching
-4. Comprehensive input validation
-5. Better logging for debugging
-"""
-
 import random
 import logging
 from pathlib import Path
@@ -29,10 +18,10 @@ DEFAULT_TILE_SIZE = 256
 
 def list_sequence_dirs(root: str) -> List[Path]:
     """List all sequence directories in the root directory."""
-    root = Path(root)
-    if not root.exists():
+    root = Path(root) # type: ignore
+    if not root.exists(): #type: ignore
         return []
-    return [p for p in sorted(root.iterdir()) if p.is_dir()]
+    return [p for p in sorted(root.iterdir()) if p.is_dir()] #type: ignore
 
 
 def _collect_image_files(seq_dir: Path, subfolder: str) -> List[Path]:
@@ -54,7 +43,7 @@ def find_sharp_blur_pairs(root_test_dir: str,
     """
     root = Path(root_test_dir)
     pairs = []
-    seq_dirs = list_sequence_dirs(root)
+    seq_dirs = list_sequence_dirs(root)     #type: ignore
     
     for seq in seq_dirs:
         sharp_files = _collect_image_files(seq, 'sharp')
@@ -304,7 +293,7 @@ def calculate_metrics(output: torch.Tensor, target: torch.Tensor) -> Tuple[float
         logging.error("No valid PSNR/SSIM values calculated!")
         return 0.0, 0.0
     
-    return np.mean(psnr_values), np.mean(ssim_values)
+    return np.mean(psnr_values), np.mean(ssim_values) #type: ignore
 
 
 # Training and evaluation functions

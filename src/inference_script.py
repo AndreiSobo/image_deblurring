@@ -5,18 +5,24 @@ import mlflow.pytorch
 import os
 from PIL import Image
 from src.utils import infer_large_image
+from src.model_class import DeblurUNet
 
 def main():
     parser = argparse.ArgumentParser(description="running inference for deblurring")
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--input_folder", type=str, required=True)
-    parser.add_argument("--model_name", type=str, required=True)
+    parser.add_argument("--model_name", type=str, default="deblurmodelv8")
     parser.add_argument("--output_folder", type=str,required=True)
     parser.add_argument("--date", type=str, required=True)
 
     args = parser.parse_args()
 
-    model = mlflow.pytorch.load_model(args.model_path)
+
+    # changed inference to torch based rather than mlflow based
+
+    model = DeblurUNet()
+    checkpoint = torch.load(args.model_path, map_location='cpu', weights_only=False)
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

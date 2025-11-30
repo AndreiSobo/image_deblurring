@@ -113,19 +113,19 @@ class DeblurDataset(Dataset):
         # Ensure both images have the same size (center crop if needed)
         if (bw, bh) != (sw, sh):
             tw, th = min(bw, sw), min(bh, sh)
-            blur_img = TF.center_crop(blur_img, (th, tw))
-            sharp_img = TF.center_crop(sharp_img, (th, tw))
+            blur_img = TF.center_crop(blur_img, (th, tw))   #type:ignore
+            sharp_img = TF.center_crop(sharp_img, (th, tw)) #type:ignore
         
-        W, H = blur_img.size
+        W, H = blur_img.size    #type:ignore
         
         # Handle images smaller than patch_size
         if W < self.patch_size or H < self.patch_size:
             pad_w = max(0, self.patch_size - W)
             pad_h = max(0, self.patch_size - H)
             padding = (pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2)
-            blur_img = TF.pad(blur_img, padding, padding_mode='reflect')
-            sharp_img = TF.pad(sharp_img, padding, padding_mode='reflect')
-            W, H = blur_img.size
+            blur_img = TF.pad(blur_img, padding, padding_mode='reflect')        #type:ignore
+            sharp_img = TF.pad(sharp_img, padding, padding_mode='reflect')     #type:ignore
+            W, H = blur_img.size                                                #type:ignore
         
         # Extract random synchronized patch
         x = random.randint(0, W - self.patch_size)
@@ -152,8 +152,8 @@ class DeblurDataset(Dataset):
         k = random.choice([0, 1, 2, 3])
         if k > 0:
             # Convert to tensor for rotation, then back to PIL
-            blur_tensor = TF.to_tensor(blur_patch)
-            sharp_tensor = TF.to_tensor(sharp_patch)
+            blur_tensor = TF.to_tensor(blur_patch)          #type:ignore
+            sharp_tensor = TF.to_tensor(sharp_patch)        #type:ignore
             
             blur_tensor = torch.rot90(blur_tensor, k=k, dims=[1, 2])
             sharp_tensor = torch.rot90(sharp_tensor, k=k, dims=[1, 2])

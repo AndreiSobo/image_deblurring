@@ -300,8 +300,8 @@ def main():
     # Log the verified best model to MLflow
     logging.info("Logging model to MLflow...")
     signature = create_model_signature(model, device)
-    
-    mlflow.pytorch.log_model(
+        
+    mlflow.pytorch.log_model( #type: ignore
         model, 
         artifact_path="deblur_model",
         registered_model_name=args.registered_model_name, 
