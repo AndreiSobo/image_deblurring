@@ -41,9 +41,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize info card keyboard accessibility
     initializeInfoCardAccessibility();
 
-    // API Configuration - Will be updated when Azure Function is deployed
+    // API Configuration
     const API_CONFIG = {
-        imageDeblur: '/api/imageDeblur' // Updated to relative path for Azure Static Web Apps
+        imageDeblur: '/api/imageDeblur'
     };
 
     // =============================================================================
