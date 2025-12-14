@@ -1,7 +1,12 @@
 {
     "routes": [
         {
-            "route": "/api/deblur_func",
+            "route": "/api/imageDeblur",
+            "methods": [
+                "GET",
+                "POST",
+                "OPTIONS"
+            ],
             "allowedRoles": [
                 "anonymous"
             ]
@@ -11,13 +16,6 @@
             "allowedRoles": [
                 "anonymous"
             ]
-        },
-        {
-            "route": "/imageDeblur",
-            "methods": [
-                "POST"
-            ],
-            "rewrite": "/api/deblur_func"
         },
         {
             "route": "/*",
