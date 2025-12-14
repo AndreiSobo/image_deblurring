@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // API Configuration - Will be updated when Azure Function is deployed
     const API_CONFIG = {
-        imageDeblur: 'https://your-deblur-function-url/api/DeblurImage' // To be updated
+        imageDeblur: '/api/imageDeblur' // Updated to relative path for Azure Static Web Apps
     };
 
     // =============================================================================
@@ -74,45 +74,45 @@ document.addEventListener('DOMContentLoaded', function () {
     // Preview selected image
     function previewImageFile(file) {
         const reader = new FileReader();
-        
-        reader.onload = function(e) {
+
+        reader.onload = function (e) {
             currentImage = e.target.result;
             previewImage.src = currentImage;
-            
+
             // Show preview section and action buttons
             previewSection.style.display = 'block';
             actionButtons.style.display = 'block';
             statusContainer.style.display = 'none';
-            
+
             // Update image info
             updateImageInfo(file);
-            
+
             // Add visual feedback
             previewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            
+
             showStatusMessage('Image loaded successfully! Click "Deblur Image" to process.', 'success');
         };
-        
-        reader.onerror = function() {
+
+        reader.onerror = function () {
             showStatusMessage('Error reading the image file. Please try again.', 'error');
         };
-        
+
         reader.readAsDataURL(file);
     }
 
     // Update image information display
     function updateImageInfo(file) {
         const img = new Image();
-        img.onload = function() {
+        img.onload = function () {
             const sizeKB = (file.size / 1024).toFixed(1);
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             const sizeText = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
-            
+
             // Check if image is very large and warn user
-            const warningText = (img.width > 2000 || img.height > 2000) 
-                ? '<br><span style="color: #ff9800;">⚠️ Large image - processing may take 60-90 seconds</span>' 
+            const warningText = (img.width > 2000 || img.height > 2000)
+                ? '<br><span style="color: #ff9800;">⚠️ Large image - processing may take 60-90 seconds</span>'
                 : '';
-            
+
             imageInfo.innerHTML = `
                 <strong>📁 ${file.name}</strong><br>
                 📏 ${img.width} × ${img.height} pixels<br>
@@ -145,12 +145,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Handle dropped files
         uploadArea.addEventListener('drop', handleDrop, false);
-        
+
         // Handle click to upload
         uploadArea.addEventListener('click', () => {
             imageUpload.click();
         });
-        
+
         // Handle file input change
         imageUpload.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleDrop(e) {
         const dt = e.dataTransfer;
         const files = dt.files;
-        
+
         if (files.length > 0) {
             handleFileSelect(files[0]);
         }
@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // =============================================================================
 
     // Handle deblur button click
-    deblurBtn.addEventListener('click', function() {
+    deblurBtn.addEventListener('click', function () {
         if (!currentImage || !currentImageFile) {
             showStatusMessage('Please upload an image first.', 'error');
             return;
@@ -201,10 +201,10 @@ document.addEventListener('DOMContentLoaded', function () {
         processing.style.display = 'block';
         actionButtons.style.display = 'none';
         resultsSection.style.display = 'none';
-        
+
         // Scroll to processing section
         processing.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        
+
         // Simulate progress
         let progress = 0;
         const progressInterval = setInterval(() => {
@@ -215,14 +215,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // For now, simulate the API call with mock data
         // In production, this would be replaced with actual Azure Function call
-        const useMockData = true; // Set to false when actual API is available
+        const useMockData = false; // Set to false when actual API is available
 
         if (useMockData) {
             // Simulate processing delay (realistic for CPU inference)
             setTimeout(() => {
                 clearInterval(progressInterval);
                 updateProgress(100);
-                
+
                 setTimeout(() => {
                     // Mock successful deblurring - for demo purposes, show the same image
                     // In production, this would be the actual deblurred result
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function () {
     async function callDeblurAPI(imageFile) {
         // Convert image to base64
         const base64Image = await fileToBase64(imageFile);
-        
+
         const response = await fetch(API_CONFIG.imageDeblur, {
             method: 'POST',
             headers: {
@@ -293,23 +293,23 @@ document.addEventListener('DOMContentLoaded', function () {
         if (data.success) {
             // Store deblurred image data
             deblurredImageData = data.deblurred_image;
-            
+
             // Update result images
             originalResult.src = data.original_image;
             deblurredResult.src = data.deblurred_image;
-            
+
             // Show results section
             processing.style.display = 'none';
             resultsSection.style.display = 'block';
-            
+
             // Scroll to results
             resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            
+
             // Show success message with metrics
             const timeText = data.processing_time ? `${data.processing_time}s` : 'N/A';
             const qualityText = data.quality_improvement ? `${(data.quality_improvement * 100).toFixed(0)}%` : 'N/A';
             showStatusMessage(
-                `✅ Deblurring completed! Processing time: ${timeText} | Quality improvement: ${qualityText}`, 
+                `✅ Deblurring completed! Processing time: ${timeText} | Quality improvement: ${qualityText}`,
                 'success'
             );
         } else {
@@ -320,10 +320,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // Handle deblurring error
     function handleDeblurringError(error) {
         console.error('Deblurring error:', error);
-        
+
         processing.style.display = 'none';
         actionButtons.style.display = 'block';
-        
+
         showStatusMessage(`❌ Deblurring failed: ${error.message}. Please try again or use a smaller image.`, 'error');
     }
 
@@ -337,13 +337,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // =============================================================================
 
     // Clear current image and reset interface
-    clearBtn.addEventListener('click', function() {
+    clearBtn.addEventListener('click', function () {
         if (confirm('Are you sure you want to clear the current image?')) {
             resetInterface();
         }
     });
 
-    newImageBtn.addEventListener('click', function() {
+    newImageBtn.addEventListener('click', function () {
         resetInterface();
     });
 
@@ -352,26 +352,26 @@ document.addEventListener('DOMContentLoaded', function () {
         currentImage = null;
         currentImageFile = null;
         deblurredImageData = null;
-        
+
         previewSection.style.display = 'none';
         actionButtons.style.display = 'none';
         processing.style.display = 'none';
         resultsSection.style.display = 'none';
         statusContainer.style.display = 'block';
-        
+
         previewImage.src = '';
         imageInfo.innerHTML = '';
         imageUpload.value = '';
         updateProgress(0);
-        
+
         showStatusMessage('📤 Upload or drag & drop an image to get started', 'info');
-        
+
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // Download enhanced image
-    downloadBtn.addEventListener('click', function() {
+    downloadBtn.addEventListener('click', function () {
         if (!deblurredImageData) {
             showStatusMessage('No enhanced image available for download.', 'error');
             return;
@@ -384,14 +384,14 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         showStatusMessage('✅ Enhanced image downloaded successfully!', 'success');
     });
 
     // Show status message with type styling
     function showStatusMessage(message, type = 'info') {
         statusMessage.className = 'status-message';
-        
+
         switch (type) {
             case 'success':
                 statusMessage.className += ' status-success';
@@ -405,9 +405,9 @@ document.addEventListener('DOMContentLoaded', function () {
             default:
                 statusMessage.className += ' status-info';
         }
-        
+
         statusMessage.innerHTML = message;
-        
+
         // Show status container if hidden
         if (statusContainer.style.display === 'none') {
             statusContainer.style.display = 'block';
@@ -423,11 +423,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const interactiveElements = document.querySelectorAll('button, .upload-area, .info-card-header');
 
         interactiveElements.forEach(element => {
-            element.addEventListener('touchstart', function() {
+            element.addEventListener('touchstart', function () {
                 this.style.transform = 'scale(0.98)';
             }, { passive: true });
 
-            element.addEventListener('touchend', function() {
+            element.addEventListener('touchend', function () {
                 setTimeout(() => {
                     this.style.transform = '';
                 }, 150);
@@ -439,7 +439,7 @@ document.addEventListener('DOMContentLoaded', function () {
             deblurBtn.addEventListener('click', () => {
                 navigator.vibrate(50);
             });
-            
+
             downloadBtn.addEventListener('click', () => {
                 navigator.vibrate([30, 50, 30]);
             });
@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         infoCardHeaders.forEach(header => {
             // Add keyboard support
-            header.addEventListener('keydown', function(e) {
+            header.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     this.click();
@@ -465,11 +465,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Add touch feedback for mobile
             if (isTouchDevice) {
-                header.addEventListener('touchstart', function() {
+                header.addEventListener('touchstart', function () {
                     this.style.transform = 'scale(0.98)';
                 }, { passive: true });
 
-                header.addEventListener('touchend', function() {
+                header.addEventListener('touchend', function () {
                     setTimeout(() => {
                         this.style.transform = '';
                     }, 150);
@@ -500,7 +500,7 @@ function toggleInfoCard(cardType) {
         cardArrow.textContent = '▲';
         cardArrow.setAttribute('aria-label', `Collapse ${cardType} explanation`);
         cardHeader.setAttribute('aria-expanded', 'true');
-        
+
         // Smooth scroll to make expanded content visible
         setTimeout(() => {
             cardBody.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
