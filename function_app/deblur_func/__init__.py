@@ -84,7 +84,7 @@ def load_model():
             return None
     return MODEL
 
-@bp.route(route="imageDeblur", methods={"GET", "POST", "OPTIONS"}, auth_level=func.AuthLevel.ANONYMOUS)
+@bp.route(route="imageDeblur", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
     """Deblurring function using the attached PyTorch model"""
     logger.info("imageDeblur function processed a request")
