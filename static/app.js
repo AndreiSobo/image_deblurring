@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // API Configuration
     const API_CONFIG = {
-        imageDeblur: '/api/imageDeblur'
+        imageDeblur: 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur'
     };
 
     // =============================================================================
