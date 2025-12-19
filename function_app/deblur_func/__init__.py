@@ -132,7 +132,16 @@ def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
         # decode base 64 image
         try:
             image_data = base64.b64decode(image_b64)
-            image_pil = _Image.open(io.BytesIO(image_data)).convert("RGB") # type: ignore
+            image_pil = _Image.open(io.BytesIO(image_data)) # type: ignore
+            
+            # Fix orientation based on EXIF data (important for mobile photos)
+            try:
+                from PIL import ImageOps
+                image_pil = ImageOps.exif_transpose(image_pil)
+            except Exception as exif_err:
+                logger.warning(f"Could not apply EXIF orientation: {exif_err}")
+            
+            image_pil = image_pil.convert("RGB")
         except Exception as e:
             logger.error(f"Failed to decode image: {str(e)}")
             return func.HttpResponse(
