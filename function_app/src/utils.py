@@ -156,6 +156,7 @@ def extract_tiles_from_pil(img: Image.Image, coords: List[Tuple[int,int,int,int]
 def tile_tensor(tensor: torch.Tensor, tile_size: int, overlap: int) -> Tuple[List[torch.Tensor], List[Tuple[int,int,int,int]]]:
     """
     Splits a tensor into overlapping tiles for processing large images.
+    Pads edge tiles to ensure all tiles are exactly tile_size x tile_size.
     
     Args:
         tensor: Input tensor of shape [1, C, H, W] or [C, H, W]
@@ -163,7 +164,7 @@ def tile_tensor(tensor: torch.Tensor, tile_size: int, overlap: int) -> Tuple[Lis
         overlap: Number of pixels to overlap between adjacent tiles
         
     Returns:
-        tiles: List of tile tensors
+        tiles: List of tile tensors (all exactly tile_size x tile_size)
         coords: List of (x1, y1, x2, y2) coordinates for each tile
     """
     # Handle both [C, H, W] and [1, C, H, W] shapes
@@ -184,6 +185,16 @@ def tile_tensor(tensor: torch.Tensor, tile_size: int, overlap: int) -> Tuple[Lis
             x2 = min(x1 + tile_size, W)
             y2 = min(y1 + tile_size, H)
             tile = tensor[..., y1:y2, x1:x2]
+            
+            # Pad tile if it's smaller than tile_size (edge tiles)
+            _, _, th, tw = tile.shape
+            if th < tile_size or tw < tile_size:
+                pad_h = tile_size - th
+                pad_w = tile_size - tw
+                # Pad: (left, right, top, bottom)
+                # Use 'constant' (zero-padding) - no size limitations, works well with CNNs
+                tile = torch.nn.functional.pad(tile, (0, pad_w, 0, pad_h), mode='constant', value=0)
+            
             tiles.append(tile)
             coords.append((x1, y1, x2, y2))
     
@@ -193,15 +204,23 @@ def create_blend_weight_cosine(tile_h: int, tile_w: int, overlap: int) -> torch.
     """
     Cosine taper provides smoother blending than linear.
     Falls off as: 0.5 * (1 + cos(π * dist/overlap))
+    Handles edge tiles that are smaller than the overlap size.
     """
     weight = torch.ones((tile_h, tile_w))
     
-    for i in range(overlap):
-        # Cosine taper: smooth falloff from 1 to 0
+    # Limit overlap to tile dimensions to avoid index errors
+    effective_overlap_h = min(overlap, tile_h // 2)
+    effective_overlap_w = min(overlap, tile_w // 2)
+    
+    # Apply vertical blend (top and bottom)
+    for i in range(effective_overlap_h):
         alpha = 0.5 * (1 + torch.cos(torch.tensor(torch.pi * i / overlap)))
-        
         weight[i, :] *= alpha                # Top
         weight[-(i + 1), :] *= alpha         # Bottom
+    
+    # Apply horizontal blend (left and right)
+    for i in range(effective_overlap_w):
+        alpha = 0.5 * (1 + torch.cos(torch.tensor(torch.pi * i / overlap)))
         weight[:, i] *= alpha                # Left
         weight[:, -(i + 1)] *= alpha         # Right
     
@@ -213,13 +232,14 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
                 overlap: int) -> torch.Tensor:
     """
     Stitches overlapping tiles back into a full image using linear feathering for smooth blending.
+    Handles padded tiles by cropping them to their actual size before stitching.
     
     This method uses weighted averaging with linear feathering at tile edges to create
     seamless transitions and reduce edge artifacts from CNN processing. The center of each
     tile receives full weight while edges smoothly transition to zero over the overlap region.
     
     Args:
-        out_tiles: List of output tile tensors
+        out_tiles: List of output tile tensors (may be padded)
         coords: List of (x1, y1, x2, y2) coordinates for each tile
         image_shape: Target output shape (C, H, W)
         overlap: Number of pixels to overlap (for linear feathering)
@@ -235,6 +255,11 @@ def stitch_tiles(out_tiles: List[torch.Tensor],
         # Handle both [1, C, H, W] and [C, H, W] shapes
         if tile.ndim == 4:
             tile = tile.squeeze(0)
+        
+        # Crop tile to actual size (remove padding if it was added)
+        actual_h = y2 - y1
+        actual_w = x2 - x1
+        tile = tile[:, :actual_h, :actual_w]
         
         # Create blend weight map with linear feathering
         tile_h, tile_w = tile.shape[-2], tile.shape[-1]
