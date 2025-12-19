@@ -512,6 +512,7 @@ export default function ImageDeblurApp() {
                                         ref={fileInputRef}
                                         className="hidden"
                                         accept="image/*"
+                                        capture
                                         onChange={(e) => handleFileSelect(e.target.files[0])}
                                     />
                                 </div>
