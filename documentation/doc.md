@@ -265,7 +265,10 @@ class CombinedLoss(nn.Module):
 
 ### Problem: Training vs Inference Size Mismatch
 
-- **Training:** 256×256 patches (memory efficient)
+- **Training:** 256×256 pa
+
+
+tches (memory efficient)
 - **Inference:** Arbitrary sizes (1920×1080, 2048×2048, etc.)
 
 ### Solution: Sliding Window with Overlap
@@ -273,7 +276,7 @@ class CombinedLoss(nn.Module):
 **Tiling (Input → Tiles):**
 
 ```python
-def tile_tensor(img, tile_size=512, overlap=64):
+def tile_tensor(img, tile_size, overlap=64):
     stride = tile_size - overlap  # 448
     tiles = []
     coords = []
@@ -735,3 +738,322 @@ Functions in imageDeblur:
 
     test_function - [httpTrigger]
         Invoke url: https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/test
+
+---
+
+## Troubleshooting: Static Web App + Azure Functions Integration
+
+**Date:** December 14, 2025
+
+This section documents the challenges encountered when integrating an Azure Static Web App with a separately deployed Azure Function App, and the solutions that resolved them.
+
+### Problem Overview
+
+After successfully deploying the Azure Function App using `func azure functionapp publish imageDeblur`, the Static Web App frontend could not communicate with the backend, resulting in errors when attempting to deblur images.
+
+---
+
+### Issue 1: HTTP 405 Method Not Allowed
+
+**Symptom:**
+```
+❌ Deblurring failed: API Error: 405 . Please try again or use a smaller image.
+```
+
+**Root Cause:**
+
+The frontend was calling `/api/imageDeblur` as a **relative URL**, expecting the function to be integrated with the Static Web App. However, the function was deployed as a **separate Azure Function App** with its own domain (`https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net`).
+
+**Incorrect Configuration:**
+```javascript
+// static/app.js
+const API_CONFIG = {
+    imageDeblur: '/api/imageDeblur'  // ❌ Relative URL points to Static Web App
+};
+```
+
+This caused the browser to make requests to:
+```
+https://black-forest-0e6a17503.3.azurestaticapps.net/api/imageDeblur
+                                                       ↑
+                                            This endpoint doesn't exist!
+```
+
+**Solution:**
+
+Use the **full Azure Function App URL** in the frontend configuration:
+
+```javascript
+// static/app.js
+const API_CONFIG = {
+    imageDeblur: 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur'
+};
+```
+
+**File:** `static/app.js` (line 45)
+
+---
+
+### Issue 2: CORS "Failed to fetch"
+
+**Symptom:**
+```
+❌ Deblurring failed: Failed to fetch. Please try again or use a smaller image.
+```
+
+**Root Cause:**
+
+After fixing the URL, the browser blocked requests due to **Cross-Origin Resource Sharing (CORS)** restrictions. The Static Web App domain (`https://black-forest-0e6a17503.3.azurestaticapps.net`) is different from the Function App domain (`https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net`), triggering CORS protection.
+
+**Why CORS Failed:**
+
+While the function code included CORS headers:
+```python
+# function_app/deblur_func/__init__.py
+headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With"
+}
+```
+
+Azure Function Apps require **CORS configuration at the platform level** in addition to code-level headers.
+
+**Solution:**
+
+Enable CORS in the Azure Function App using **Azure Portal** or **Azure CLI**.
+
+**Option 1: Azure Portal (Recommended for Beginners)**
+
+1. Navigate to [Azure Portal](https://portal.azure.com)
+2. Open your Function App (`imageDeblur`)
+3. In the left menu, select **CORS** under **API** section
+4. Add allowed origins:
+   - For testing: `*` (allows all origins)
+   - For production: `https://black-forest-0e6a17503.3.azurestaticapps.net`
+5. Click **Save**
+
+**Option 2: Azure CLI**
+
+```bash
+# Allow all origins (testing)
+az functionapp cors add \
+  --name imageDeblur \
+  --resource-group <your-resource-group> \
+  --allowed-origins "*"
+
+# Or specify exact origin (production)
+az functionapp cors add \
+  --name imageDeblur \
+  --resource-group <your-resource-group> \
+  --allowed-origins "https://black-forest-0e6a17503.3.azurestaticapps.net"
+```
+
+**Note:** The checkbox "Enable Access-Control-Allow-Credentials" is **not needed** unless your frontend sends authentication cookies or tokens. For simple POST requests with JSON data, leave it unchecked.
+
+---
+
+### Common Misconceptions Clarified
+
+**Misconception 1: Routes Configuration Files**
+
+Initially, we modified `static/routes.json` and `staticwebapp.config.json` thinking they controlled the function routing. However, these files only affect routing **within** the Static Web App itself.
+
+**Reality:**
+- `staticwebapp.config.json`: Routes for static files and Static Web App-integrated functions
+- When using a **separate Function App**, these configurations are irrelevant
+- The frontend must use the full Function App URL
+
+**Misconception 2: `/api/` Prefix Conventions**
+
+When Azure Functions are **integrated** with Static Web Apps (via GitHub Actions `api_location` setting), they automatically become available at `/api/*` routes.
+
+**Two Deployment Architectures:**
+
+| Approach | Function Location | Frontend URL | CORS Needed? |
+|----------|------------------|--------------|--------------|
+| **Integrated** | Part of Static Web App build | `/api/imageDeblur` (relative) | ❌ No (same domain) |
+| **Separate** | Independent Function App | `https://func-app.azurewebsites.net/api/...` (absolute) | ✅ Yes (cross-origin) |
+
+**This project uses:** Separate deployment (via `func azure functionapp publish`)
+
+---
+
+### Architecture Decision Tree
+
+**When building future Static Web App + Azure Functions projects:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Do you need the function to scale independently     │
+│ or be reused by multiple frontends?                 │
+└────────────────┬────────────────────────────────────┘
+                 │
+        ┌────────┴─────────┐
+        │                  │
+       YES                NO
+        │                  │
+        ▼                  ▼
+┌──────────────┐   ┌──────────────┐
+│   SEPARATE   │   │  INTEGRATED  │
+│ FUNCTION APP │   │ WITH STATIC  │
+│              │   │   WEB APP    │
+└──────┬───────┘   └──────┬───────┘
+       │                  │
+       ▼                  ▼
+Deploy with:         Deploy with:
+├─ func publish      ├─ GitHub Actions
+├─ Full URL in JS    │   api_location: "function_app"
+├─ Configure CORS    ├─ Relative URL in JS
+└─ More flexibility  │   imageDeblur: '/api/imageDeblur'
+                     └─ CORS automatic
+```
+
+---
+
+### Best Practices for Future Projects
+
+#### 1. **Choose Deployment Strategy Early**
+
+**Separate Function App (This Project):**
+```bash
+# Deploy function independently
+cd function_app/
+func azure functionapp publish imageDeblur
+```
+
+**Pros:**
+- Independent scaling
+- Reusable across multiple frontends
+- Separate monitoring and logging
+
+**Cons:**
+- Requires CORS configuration
+- More complex setup
+- Two separate deployments
+
+**Integrated with Static Web App:**
+```yaml
+# .github/workflows/azure-static-web-apps.yml
+- name: Build And Deploy
+  uses: Azure/static-web-apps-deploy@v1
+  with:
+    app_location: "/static"
+    api_location: "function_app"  # ← Deploys functions automatically
+```
+
+**Pros:**
+- Single deployment
+- No CORS issues
+- Simpler configuration
+
+**Cons:**
+- Coupled deployments
+- Less flexible scaling
+
+#### 2. **API URL Configuration**
+
+Always use environment variables or configuration files for API URLs:
+
+```javascript
+// Good: Flexible configuration
+const API_CONFIG = {
+    imageDeblur: process.env.FUNCTION_URL || 
+                 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur'
+};
+
+// Avoid: Hardcoded relative paths with separate deployments
+const API_CONFIG = {
+    imageDeblur: '/api/imageDeblur'  // ❌ Only works with integrated functions
+};
+```
+
+#### 3. **CORS Checklist for Separate Function Apps**
+
+When using a separate Azure Function App:
+
+- [ ] Add CORS configuration in Azure Portal (API → CORS)
+- [ ] Include proper allowed origins (not just `*` in production)
+- [ ] Verify CORS headers in function code
+- [ ] Test preflight OPTIONS requests
+- [ ] Check browser console for CORS errors
+
+#### 4. **Testing Strategy**
+
+**Test functions independently first:**
+```bash
+# Test function directly (bypasses CORS)
+curl -X POST https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur \
+  -H "Content-Type: application/json" \
+  -d '{"image": "<base64-data>"}'
+```
+
+**Then test from browser:**
+- Check Network tab in Developer Tools
+- Look for CORS errors in Console
+- Verify response headers include `Access-Control-Allow-Origin`
+
+#### 5. **Documentation**
+
+Always document:
+- Deployment method chosen (separate vs integrated)
+- Full function URLs (including all endpoints)
+- CORS configuration applied
+- Any routing configurations in `staticwebapp.config.json`
+
+---
+
+### Quick Diagnostic Guide
+
+**When you see "405 Method Not Allowed":**
+1. ✅ Verify the URL in frontend matches deployed function URL
+2. ✅ Check browser Network tab for actual request URL
+3. ✅ Confirm function accepts the HTTP method (GET/POST/OPTIONS)
+
+**When you see "Failed to fetch" or CORS errors:**
+1. ✅ Check if function and frontend are on different domains
+2. ✅ Verify CORS is enabled in Azure Portal
+3. ✅ Confirm allowed origins include your Static Web App URL
+4. ✅ Test function directly with curl (should work)
+5. ✅ Check browser console for specific CORS error messages
+
+**When routes.json changes don't work:**
+1. ✅ Remember: routes.json only affects Static Web App routing
+2. ✅ If using separate Function App, routes.json is irrelevant
+3. ✅ Use full function URL instead of relying on rewrites
+
+---
+
+### Resolution Summary
+
+**Final Working Configuration:**
+
+**Frontend (`static/app.js`):**
+```javascript
+const API_CONFIG = {
+    imageDeblur: 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur'
+};
+```
+
+**Azure Function App CORS (Portal):**
+```
+Allowed Origins:
+- https://portal.azure.com
+- https://black-forest-0e6a17503.3.azurestaticapps.net
+```
+
+**Function Code (`function_app/deblur_func/__init__.py`):**
+```python
+headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With"
+}
+
+if req.method == "OPTIONS":
+    return func.HttpResponse(status_code=204, headers=headers)
+```
+
+**Result:** ✅ Successfully processes deblurring requests from Static Web App
+
+**Updated December 14, 2025**
