@@ -345,13 +345,26 @@ export default function ImageDeblurApp() {
         try {
             const startTime = Date.now();
 
-            // Send to backend
-            const formData = new FormData();
-            formData.append('image', file);
+            // Convert image to base64
+            const reader = new FileReader();
+            const base64Promise = new Promise((resolve, reject) => {
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1]; // Remove data:image/...;base64, prefix
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
 
-            const response = await fetch('/api/deblur', {
+            const base64Image = await base64Promise;
+
+            // Send directly to Azure Function
+            const response = await fetch('https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur', {
                 method: 'POST',
-                body: formData,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: base64Image }),
             });
 
             if (!response.ok) {
