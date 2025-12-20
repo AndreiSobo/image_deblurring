@@ -670,6 +670,210 @@ curl https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/t
 
 ---
 
+## React + Node.js Migration
+
+**Date:** December 20, 2025
+
+### Architecture
+
+**Production:** React (Vite) → Azure Function (Python/PyTorch) - direct HTTPS calls  
+**Development:** React (localhost:3000) → Node.js proxy (localhost:5000) → Azure Function
+
+### Project Structure
+
+```
+image_deblurring/
+├── client/                          # React frontend
+│   ├── src/App.jsx                  # Main component (607 lines)
+│   ├── vite.config.js               # Dev server + proxy config
+│   ├── staticwebapp.config.json     # ✅ ACTIVE - Azure SWA routing
+│   └── dist/                        # Build output (deployed)
+│
+├── server/                          # Node.js backend (optional, dev only)
+│   └── index.js                     # Express proxy to Azure Function
+│
+├── function_app/                    # Azure Function (Python)
+│   └── deblur_func/                 # Image processing endpoint
+│
+└── staticwebapp.config.json         # ❌ DEPRECATED (root level)
+```
+
+**Why separate client/server folders?**
+- Independent deployment (client to CDN, server optional)
+- Prevents dependency conflicts (React vs Express in same package.json)
+- Different build processes (Vite bundles client, Node.js runs natively)
+
+### Key Configuration Files
+
+#### `client/vite.config.js`
+```javascript
+export default defineConfig({
+    server: {
+        port: 3000,
+        proxy: {
+            '/api': {
+                target: 'http://localhost:5000',  // Forward /api/* to Node.js
+                changeOrigin: true,
+            },
+        },
+    },
+})
+```
+
+#### `client/staticwebapp.config.json`
+```json
+{
+    "navigationFallback": {
+        "rewrite": "/index.html",           // SPA routing
+        "exclude": ["/api/*"]               // CRITICAL: Don't rewrite API calls
+    },
+    "responseOverrides": {
+        "404": { "rewrite": "/index.html", "statusCode": 200 }
+    }
+}
+```
+
+**Why `/api/*` exclusion is critical:**
+- Without it: `/api/deblur` → rewritten to `/index.html` → returns HTML instead of JSON
+- With it: `/api/deblur` → passes through to Azure Function
+
+**Why multiple `staticwebapp.config.json` files?**
+1. Root-level: Deprecated, from pre-React setup
+2. `client/staticwebapp.config.json`: ✅ Active, copied to `client/dist/` during build
+3. Azure deploys `client/dist/`, reads config from there
+
+### GitHub Actions Workflow
+
+**`.github/workflows/azure-static-web-apps-black-forest-0e6a17503.yml`:**
+
+```yaml
+steps:
+  - uses: actions/checkout@v3
+  
+  - name: Setup Node.js
+    uses: actions/setup-node@v3
+    with:
+      node-version: "18"
+      cache-dependency-path: client/package-lock.json
+  
+  - name: Install + Build
+    run: |
+      cd client
+      npm ci              # Reproducible installs
+      npm run build       # Vite → client/dist/
+  
+  - name: Deploy
+    uses: Azure/static-web-apps-deploy@v1
+    with:
+      app_location: "/client/dist"    # Deploy built files
+      api_location: ""                # No integrated API
+      skip_app_build: true            # Already built above
+```
+
+**Key settings:**
+- `app_location: "/client/dist"` - Deploy built React app, not source
+- `api_location: ""` - Using separate Function App (not integrated)
+- `skip_app_build: true` - Build already done in previous step (faster, more control)
+- `cache-dependency-path` - Reuse node_modules between runs
+
+### Frontend-Backend Communication
+
+**Production (Direct):**
+```jsx
+// client/src/App.jsx
+fetch('https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur', {
+    method: 'POST',
+    body: JSON.stringify({ image: base64Image })
+})
+```
+
+**Development (Proxied):**
+```jsx
+// Same code, but relative URL
+fetch('/api/deblur', { method: 'POST' })
+// Vite intercepts → forwards to localhost:5000 → Node.js → Azure Function
+```
+
+### Node.js Server (Optional)
+
+**Purpose:** Development proxy with request logging, not deployed to production.
+
+**server/index.js** key features:
+- Multer for file uploads
+- CORS handling
+- Converts file buffer → base64 for Azure Function
+- Error logging
+
+**When to use:**
+- ✅ Local development with request logs
+- ✅ Need to transform requests before Azure Function
+- ❌ Production (React calls Azure directly)
+
+### Local Development
+
+```bash
+# Terminal 1: React dev server
+cd client && npm run dev          # localhost:3000
+
+# Terminal 2: Node.js server (optional)
+cd server && npm run dev          # localhost:5000
+```
+
+Vite proxy forwards `/api/*` requests from port 3000 → 5000.
+
+### Tech Stack
+
+| Component | Technology | Why |
+|-----------|-----------|-----|
+| Frontend | React 18 + Vite | Fast HMR, modern build tool |
+| Styling | Tailwind CSS | Utility-first, small bundle |
+| Icons | Lucide React | Tree-shakeable SVG icons |
+| Backend (optional) | Express + Multer | File uploads, request logging |
+| Deployment | Azure Static Web Apps | Serverless, global CDN |
+
+### Common Issues
+
+**1. API returns HTML instead of JSON**
+- **Cause:** Missing `/api/*` exclusion in `staticwebapp.config.json`
+- **Fix:** Add `"exclude": ["/api/*"]` to `navigationFallback`
+
+**2. Vite proxy 404**
+- **Cause:** Node.js server not running on port 5000
+- **Fix:** Check `server.proxy` in `vite.config.js`, verify server is running
+
+**3. 404 on page refresh**
+- **Cause:** Azure doesn't know client-side routes
+- **Fix:** `navigationFallback` rewrites all routes to `/index.html`
+
+**4. CORS errors**
+- **Cause:** Azure Function not configured for cross-origin
+- **Fix:** Add CORS in Azure Portal or function code headers
+
+### Migration Checklist
+
+**Frontend:**
+- [x] Vite + React + Tailwind setup
+- [x] Convert HTML → JSX components
+- [x] Configure `vite.config.js` proxy
+- [x] Create `staticwebapp.config.json` with `/api/*` exclusion
+- [x] Update API calls to relative URLs
+
+**Deployment:**
+- [x] GitHub Actions workflow
+- [x] Build step: `npm ci && npm run build`
+- [x] Deploy `client/dist/` with `skip_app_build: true`
+- [x] Configure CORS in Azure Function
+
+**Verification:**
+- [x] React app loads
+- [x] API calls work
+- [x] Page refresh doesn't 404
+- [x] No CORS errors
+
+**Updated December 20, 2025**
+
+---
+
 ## Quick Reference
 
 ### Commands

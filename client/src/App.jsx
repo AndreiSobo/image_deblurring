@@ -436,11 +436,12 @@ export default function ImageDeblurApp() {
                             isOpen={activeInfoCard === 'what'}
                             toggle={toggleInfoCard}
                         >
-                            <p>This tool uses a <strong>custom U-Net neural network</strong> to restore sharpness to blurred images. It intelligently tiles large images and processes them via serverless functions.</p>
+                            <p>A webapp that uses a <strong>custom U-Net neural network</strong> to restore sharpness to blurred images. It tiles large images and processes the tiles via serverless functions.</p>
                             <ul className="mt-3 space-y-1 list-disc pl-4 marker:text-blue-500">
                                 <li>Removes motion & defocus blur</li>
-                                <li>Supports 4K resolution</li>
+                                <li>Supports images of different sizes</li>
                                 <li>Secure, serverless processing</li>
+                                <li>Inference time 15 - 150 seconds</li>
                             </ul>
                         </InfoCard>
 
@@ -454,7 +455,7 @@ export default function ImageDeblurApp() {
                             <p className="bg-slate-100 p-2 rounded text-xs font-mono mb-3 text-blue-700">
                                 Upload → Base64 → Azure Function → U-Net Inference → Result
                             </p>
-                            <p>We use a PyTorch model trained on the REDS dataset. The architecture features a 32-channel U-Net with GroupNorm, optimized for CPU inference on standard cloud tiers.</p>
+                            <p>The project uses a PyTorch model trained on the GoPro_Large dataset. The architecture features a 32-channel Convolutional Neural Network optimized for CPU inference on standard cloud tiers.</p>
                         </InfoCard>
 
                         <InfoCard
@@ -464,7 +465,7 @@ export default function ImageDeblurApp() {
                             isOpen={activeInfoCard === 'why'}
                             toggle={toggleInfoCard}
                         >
-                            <p>This project demonstrates end-to-end ML engineering: from training custom architectures to deploying scalable cloud infrastructure and building responsive frontends.</p>
+                            <p>This project demonstrates end-to-end ML engineering: from training custom models to deploying scalable cloud infrastructure and building responsive frontends.</p>
                         </InfoCard>
                     </div>
                 </div>
