@@ -1,9 +1,9 @@
 # ClarityAI - Image Deblurring Application
 
-A modern, full-stack web application for AI-powered image deblurring using React, Node.js, and Azure Functions with deep learning.
+A modern web application for AI-powered image deblurring using React and Azure Functions with deep learning.
 
-🌐 **Live Demo**: https://black-forest-0e6a17503.3.azurestaticapps.net (legacy static site)  
-🚀 **React App**: Run locally with `npm run dev` (see Quick Start below)
+🌐 **Live Demo**: https://black-forest-0e6a17503.3.azurestaticapps.net  
+🚀 **Local Development**: `cd client && npm run dev` (see Quick Start below)
 
 ## ✨ Features
 
@@ -23,45 +23,46 @@ A modern, full-stack web application for AI-powered image deblurring using React
 - **Lucide React** - Beautiful icons
 
 ### Backend
-- **Node.js + Express** - API server
 - **Azure Functions (Python)** - Serverless ML inference
 - **Custom U-Net CNN** - Deep learning model for deblurring
 
 ### ML/AI
 - **PyTorch** - Deep learning framework
 - **U-Net Architecture** - 8.6M parameter CNN
-- **REDS Dataset** - Trained on 240 video sequences
+- **GoPro_Large Dataset** - Trained on 3214 pairs of blurry-sharp images
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ and npm
-- Python 3.10+ (for Azure Function local development)
+- Node.js 18+ and npm (for React development)
+- Python 3.10+ and Azure Functions Core Tools (optional, for local Azure Function development)
 
 ### Installation
 
 ```bash
-# Install all dependencies (root, client, and server)
-npm run install:all
+# Install dependencies
+npm install
 
-# Start both frontend and backend
+# Start the React app
 npm run dev
 ```
 
 The app will be available at:
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
+- **Backend**: Azure Function (production deployment)
 
-### Development
+### Local Development with Azure Functions
 
-Run frontend and backend separately:
+To test with a local Azure Function:
 
 ```bash
-# Terminal 1 - Start backend
-npm run dev:server
+# Terminal 1 - Start Azure Function locally (requires Azure Functions Core Tools)
+cd function_app
+func start
 
-# Terminal 2 - Start frontend  
-npm run dev:client
+# Terminal 2 - Start React app and update the API endpoint in App.jsx to http://localhost:7071
+cd client
+npm run dev
 ```
 
 ### Production Build
@@ -85,20 +86,14 @@ image_deblurring/
 │   │   └── index.css   # Global styles
 │   └── package.json
 │
-├── server/              # Node.js Express backend
-│   ├── index.js        # API server with Azure Function proxy
-│   └── package.json
-│
-├── function_app/        # Azure Function (Python)
+├── function_app/        # Azure Function (Python) - Production Backend
 │   ├── deblur_func/    # Deblurring endpoint
 │   └── src/            # ML utilities (tiling, stitching)
 │
-├── src/                 # ML training code
-│   ├── train.py        # Training script
-│   ├── model_class.py  # U-Net architecture
-│   └── utils.py        # Data processing
-│
-└── static/             # Legacy static site (deprecated)
+└── src/                 # ML training code
+    ├── train.py        # Training script
+    ├── model_class.py  # U-Net architecture
+    └── utils.py        # Data processing
 ```
 
 ## 🎨 Features Showcase
@@ -118,19 +113,17 @@ Optimized layouts for all screen sizes with mobile-first approach.
 
 - **Architecture**: Custom U-Net with 4 encoder-decoder levels
 - **Parameters**: 8.6M
-- **Training**: REDS dataset (240 sequences)
+- **Training**: GoPro_Large Dataset with 3214 pairs of blurry-sharp images
 - **Performance**: PSNR 26.8 dB, SSIM 0.77
-- **Inference Time**: 15-25 seconds (CPU on Azure Functions)
+- **Inference Time**: 15-200 seconds (CPU on Azure Functions) depending on image size and cold start
 
 ## 🔧 API Endpoints
 
-### Backend (Express - Port 5000)
-- `GET /api/health` - Health check
-- `POST /api/deblur` - Image deblurring endpoint
-
-### Azure Function
-- `POST /api/imagedeblur` - Direct deblurring endpoint
-  - URL: https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur
+### Azure Function (Production Backend)
+- `POST /api/imagedeblur` - Image deblurring endpoint
+  - **Production URL**: https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur
+  - **Local URL** (with Azure Functions Core Tools): http://localhost:7071/api/imagedeblur
+- `GET /api/test` - Health check endpoint
 
 ## 📚 Documentation
 
@@ -149,8 +142,5 @@ See [documentation/doc.md](documentation/doc.md)
 
 ## 📄 License
 
-This project is part of a portfolio demonstration and is available under the MIT License.
+MIT
 
----
-
-**Built with** ❤️ **using React, Node.js, PyTorch, and Azure**

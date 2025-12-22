@@ -670,57 +670,116 @@ curl https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/t
 
 ---
 
-## React + Node.js Migration
+## Development Workflow & Deployment
 
-**Date:** December 20, 2025
+**Date:** December 22, 2025
 
-### Architecture
+### Architecture Overview
 
-**Production:** React (Vite) → Azure Function (Python/PyTorch) - direct HTTPS calls  
-**Development:** React (localhost:3000) → Node.js proxy (localhost:5000) → Azure Function
+This project uses a **local-first development workflow** with production deployment to Azure.
+
+**Production (Azure):**
+```
+React App (Azure Static Web App)
+    ↓ HTTPS
+Azure Function (Python/PyTorch)
+https://black-forest-0e6a17503.3.azurestaticapps.net → https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net
+```
+
+**Local Development (Recommended):**
+```
+React App (Vite Dev Server)
+    ↓ HTTPS
+Azure Function (Production)
+http://localhost:3000 → https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net
+```
 
 ### Project Structure
 
 ```
 image_deblurring/
-├── client/                          # React frontend
-│   ├── src/App.jsx                  # Main component (607 lines)
-│   ├── vite.config.js               # Dev server + proxy config
-│   ├── staticwebapp.config.json     # ✅ ACTIVE - Azure SWA routing
-│   └── dist/                        # Build output (deployed)
+├── client/                          # React frontend (Vite + Tailwind)
+│   ├── src/App.jsx                  # Main component
+│   ├── vite.config.js               # Dev server configuration
+│   ├── staticwebapp.config.json     # Azure Static Web App routing
+│   ├── dist/                        # Build output (deployed to Azure)
+│   └── package.json
 │
-├── server/                          # Node.js backend (optional, dev only)
-│   └── index.js                     # Express proxy to Azure Function
+├── function_app/                    # Azure Function (Python) - Production Backend
+│   ├── deblur_func/                 # Image deblurring endpoint
+│   ├── src/                         # ML utilities (tiling, stitching)
+│   ├── model/                       # PyTorch model
+│   ├── function_app.py              # Function app entry point
+│   └── requirements.txt             # Python dependencies (CPU PyTorch)
 │
-├── function_app/                    # Azure Function (Python)
-│   └── deblur_func/                 # Image processing endpoint
-│
-└── staticwebapp.config.json         # ❌ DEPRECATED (root level)
+└── src/                             # ML training code
+    ├── train.py                     # Training script
+    ├── model_class.py               # U-Net architecture
+    └── utils.py                     # Data processing utilities
 ```
 
-**Why separate client/server folders?**
-- Independent deployment (client to CDN, server optional)
-- Prevents dependency conflicts (React vs Express in same package.json)
-- Different build processes (Vite bundles client, Node.js runs natively)
+### Why Local-First Development?
+
+**Current Approach (Deploy Every Change via CI/CD):**
+- ❌ Slow feedback loop: 1-3 minutes per change
+- ❌ Wastes resources: GitHub Actions minutes, Azure deployments
+- ❌ Production breakage: Work-in-progress code goes live
+- ❌ Poor testing: Can't experiment freely
+
+**Local-First Approach (Recommended):**
+- ✅ Instant feedback: <1 second with hot module replacement (HMR)
+- ✅ Safe experimentation: Test freely without affecting production
+- ✅ Better quality: Deploy only tested, complete features
+- ✅ Cost effective: Fewer CI/CD runs
+- ✅ Cleaner Git history: Meaningful commits
+
+### Recommended Workflow
+
+```bash
+# 1. Local Development (Daily Work)
+cd client
+npm run dev              # Starts Vite dev server at localhost:3000
+# Make changes → browser auto-refreshes instantly
+# Test thoroughly with production Azure Function backend
+
+# 2. Commit When Feature is Complete
+git add .
+git commit -m "feat: add new feature"
+git push                 # Triggers CI/CD → deploys to Azure
+
+# 3. Verify in Production
+# Visit: https://black-forest-0e6a17503.3.azurestaticapps.net
+```
+
+**Key Point:** Use **localhost:3000 for development**, **Azure Static Web App for production**. The Vite dev server provides instant feedback as you code, then deploy only when features are complete and tested.
 
 ### Key Configuration Files
 
 #### `client/vite.config.js`
 ```javascript
 export default defineConfig({
+    plugins: [react()],
+    base: '/',
     server: {
-        port: 3000,
-        proxy: {
-            '/api': {
-                target: 'http://localhost:5000',  // Forward /api/* to Node.js
-                changeOrigin: true,
+        port: 3000,      // Local development server
+    },
+    build: {
+        rollupOptions: {
+            output: {
+                manualChunks: undefined,
             },
         },
     },
+    publicDir: 'public',
 })
 ```
 
-#### `client/staticwebapp.config.json`
+**Note:** No proxy configuration needed since the React app calls Azure Functions directly via full URL.
+
+#### `client/public/staticwebapp.config.json`
+
+**✅ CORRECT LOCATION** - This is the only copy you need!
+
 ```json
 {
     "navigationFallback": {
@@ -733,14 +792,22 @@ export default defineConfig({
 }
 ```
 
-**Why `/api/*` exclusion is critical:**
-- Without it: `/api/deblur` → rewritten to `/index.html` → returns HTML instead of JSON
-- With it: `/api/deblur` → passes through to Azure Function
+**How Vite Handles This File:**
+1. Source: `client/public/staticwebapp.config.json`
+2. Build: Vite copies `public/` contents to `client/dist/` during `npm run build`
+3. Deploy: GitHub Actions deploys `client/dist/` to Azure
+4. Azure reads: `staticwebapp.config.json` from deployed files
 
-**Why multiple `staticwebapp.config.json` files?**
-1. Root-level: Deprecated, from pre-React setup
-2. `client/staticwebapp.config.json`: ✅ Active, copied to `client/dist/` during build
-3. Azure deploys `client/dist/`, reads config from there
+**Why `/api/*` exclusion is critical:**
+- Without it: `/api/imagedeblur` → rewritten to `/index.html` → returns HTML instead of JSON
+- With it: `/api/imagedeblur` → passes through to Azure Function (correct behavior)
+
+**File Organization (December 2025 Cleanup):**
+- ❌ Removed: Root-level `staticwebapp.config.json` (deprecated)
+- ❌ Removed: `client/staticwebapp.config.json` (wrong location)
+- ❌ Removed: `static/` directory (legacy pre-React site)
+- ✅ Keep: `client/public/staticwebapp.config.json` (only correct location)
+- ℹ️ Auto-generated: `client/dist/staticwebapp.config.json` (build artifact, do not edit)
 
 ### GitHub Actions Workflow
 
@@ -778,48 +845,46 @@ steps:
 
 ### Frontend-Backend Communication
 
-**Production (Direct):**
+The React app calls Azure Functions **directly** in both development and production:
+
 ```jsx
-// client/src/App.jsx
-fetch('https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur', {
+// client/src/App.jsx (line 362)
+const response = await fetch('https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur', {
     method: 'POST',
-    body: JSON.stringify({ image: base64Image })
-})
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ image: base64Image }),
+});
 ```
 
-**Development (Proxied):**
-```jsx
-// Same code, but relative URL
-fetch('/api/deblur', { method: 'POST' })
-// Vite intercepts → forwards to localhost:5000 → Node.js → Azure Function
-```
+**Architecture:**
+- No backend proxy needed
+- Same endpoint for local development and production
+- Azure Function handles CORS properly
 
-### Node.js Server (Optional)
-
-**Purpose:** Development proxy with request logging, not deployed to production.
-
-**server/index.js** key features:
-- Multer for file uploads
-- CORS handling
-- Converts file buffer → base64 for Azure Function
-- Error logging
-
-**When to use:**
-- ✅ Local development with request logs
-- ✅ Need to transform requests before Azure Function
-- ❌ Production (React calls Azure directly)
-
-### Local Development
+### Local Development Setup
 
 ```bash
-# Terminal 1: React dev server
-cd client && npm run dev          # localhost:3000
+# Install dependencies (first time only)
+cd /home/andrei/git/image_deblurring/client
+npm install
 
-# Terminal 2: Node.js server (optional)
-cd server && npm run dev          # localhost:5000
+# Start Vite development server
+npm run dev
+
+# App available at: http://localhost:3000
+# - Hot Module Replacement (HMR): Changes appear instantly
+# - Calls production Azure Function for processing
 ```
 
-Vite proxy forwards `/api/*` requests from port 3000 → 5000.
+**What Vite Dev Server Provides:**
+- ⚡ Lightning-fast hot reload (<1 second)
+- 🔥 Instant updates as you edit files
+- 🎯 Same behavior as production
+- 🚀 Built-in build optimization
+
+**Important:** The Vite dev server is **NOT** a Node.js backend. It's a development tool that serves your React app locally with hot reload capabilities.
 
 ### Tech Stack
 
@@ -827,9 +892,39 @@ Vite proxy forwards `/api/*` requests from port 3000 → 5000.
 |-----------|-----------|-----|
 | Frontend | React 18 + Vite | Fast HMR, modern build tool |
 | Styling | Tailwind CSS | Utility-first, small bundle |
-| Icons | Lucide React | Tree-shakeable SVG icons |
-| Backend (optional) | Express + Multer | File uploads, request logging |
-| Deployment | Azure Static Web Apps | Serverless, global CDN |
+| **Frontend** | React 18 + Vite | Fast HMR, modern build tool |
+| **Styling** | Tailwind CSS | Utility-first, small bundle |
+| **Icons** | Lucide React | Tree-shakeable SVG icons |
+| **Backend** | Azure Functions (Python) | Serverless ML inference |
+| **ML Framework** | PyTorch (CPU) | Deep learning model |
+| **Deployment** | Azure Static Web Apps | Serverless, global CDN |
+| **CI/CD** | GitHub Actions | Automated build & deploy |
+
+### Local vs Production Environments
+
+| Aspect | Local Development | Production |
+|--------|------------------|------------|
+| **Frontend** | http://localhost:3000 | https://black-forest-0e6a17503.3.azurestaticapps.net |
+| **Backend** | Azure Function (production endpoint) | Azure Function |
+| **Purpose** | Development, testing, experimentation | Live application for users |
+| **Deployment** | None (runs on your machine) | GitHub Actions CI/CD |
+| **Changes** | Instant with hot reload | 1-3 minutes via CI/CD |
+| **When to Use** | All development work | Final verification, user access |
+
+### Development Best Practices
+
+**DO:**
+- ✅ Work locally for all development (localhost:3000)
+- ✅ Test thoroughly before committing
+- ✅ Commit complete features, not work-in-progress
+- ✅ Use meaningful commit messages
+- ✅ Verify in production after deployment
+
+**DON'T:**
+- ❌ Edit code and push immediately to see changes
+- ❌ Use production site as development environment
+- ❌ Commit untested code "to see if it works"
+- ❌ Make multiple small commits for tiny changes
 
 ### Common Issues
 
@@ -837,11 +932,9 @@ Vite proxy forwards `/api/*` requests from port 3000 → 5000.
 - **Cause:** Missing `/api/*` exclusion in `staticwebapp.config.json`
 - **Fix:** Add `"exclude": ["/api/*"]` to `navigationFallback`
 
-**2. Vite proxy 404**
-- **Cause:** Node.js server not running on port 5000
-- **Fix:** Check `server.proxy` in `vite.config.js`, verify server is running
-
-**3. 404 on page refresh**
+**2. Local dev server won't start**
+- **Cause:** Port 3000 already in use or dependencies not installed
+- **Fix:** Run `npm install` in client folder, or use `npx kill-port 3000`
 - **Cause:** Azure doesn't know client-side routes
 - **Fix:** `navigationFallback` rewrites all routes to `/index.html`
 
