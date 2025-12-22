@@ -6,4 +6,6 @@ data/*
 mlruns/
 venv310/*
 client/node_modules/*
-server/node_modules/*
+dist/
+*.log
+client/.vite/

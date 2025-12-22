@@ -3,18 +3,14 @@
     "version": "1.0.0",
     "description": "React + Node.js Image Deblurring Application with Azure Function Integration",
     "scripts": {
-        "install:all": "npm install && cd client && npm install && cd ../server && npm install",
-        "dev": "npm run dev:server & npm run dev:client",
+        "install:all": "npm install && cd client && npm install",
+        "dev": "npm run dev:client",
         "dev:client": "cd client && npm run dev",
-        "dev:server": "cd server && npm run dev",
         "build": "cd client && npm run build",
-        "preview": "cd client && npm run preview",
-        "server": "cd server && npm start"
+        "preview": "cd client && npm run preview"
     },
     "keywords": [
         "react",
-        "nodejs",
-        "express",
         "azure",
         "machine-learning",
         "image-processing"
