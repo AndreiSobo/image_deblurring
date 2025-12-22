@@ -142,9 +142,9 @@ const ComparisonSlider = ({ beforeImage, afterImage }) => {
     );
 };
 
-// --- TERMINAL VARIANTS ---
+// --- TERMINAL COMPONENT ---
 
-const RetroTerminal = ({ progress, variant = 'classic', onVariantChange }) => {
+const ProcessingTerminal = ({ progress }) => {
     const steps = [
         { threshold: 0, text: "initializing secure handshake..." },
         { threshold: 10, text: "sending image to azure function..." },
@@ -157,72 +157,23 @@ const RetroTerminal = ({ progress, variant = 'classic', onVariantChange }) => {
 
     const activeSteps = steps.filter(step => progress >= step.threshold);
 
-    // Style configurations
-    const styles = {
-        classic: {
-            bg: "bg-slate-900",
-            header: "bg-slate-800 border-b border-slate-700",
-            text: "text-green-400",
-            accent: "text-blue-400",
-            progressBg: "bg-green-500/20",
-            progressBar: "bg-green-500",
-            glow: "0 0 5px rgba(74, 222, 128, 0.5)",
-            scanline: true,
-            font: "font-mono"
-        },
-        amber: {
-            bg: "bg-[#1a1200]", // Very dark amber/brown
-            header: "bg-[#2e2000] border-b border-amber-900/50",
-            text: "text-amber-500",
-            accent: "text-amber-300",
-            progressBg: "bg-amber-900/30",
-            progressBar: "bg-amber-500",
-            glow: "0 0 8px rgba(245, 158, 11, 0.6)",
-            scanline: true,
-            font: "font-mono tracking-wider"
-        },
-        modern: {
-            bg: "bg-[#1e1e2e]", // Dark cool blue/purple
-            header: "bg-[#2a2a3c] border-b border-white/5",
-            text: "text-slate-200",
-            accent: "text-blue-400",
-            progressBg: "bg-blue-900/30",
-            progressBar: "bg-gradient-to-r from-blue-500 to-violet-500",
-            glow: "none",
-            scanline: false,
-            font: "font-sans tracking-wide"
-        }
-    };
-
-    const currentStyle = styles[variant] || styles.classic;
-
     return (
-        <div className={`w-full h-full flex flex-col ${currentStyle.bg} ${currentStyle.font} relative`}>
+        <div className="w-full h-full flex flex-col bg-[#1e1e2e] font-sans tracking-wide relative">
 
             {/* Terminal Header */}
-            <div className={`p-3 flex items-center justify-between ${currentStyle.header} shrink-0 z-10`}>
+            <div className="p-3 flex items-center justify-between bg-[#2a2a3c] border-b border-white/5 shrink-0 z-10">
                 <div className="flex gap-2">
                     <div className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors"></div>
                     <div className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors"></div>
                     <div className="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-500 transition-colors"></div>
                 </div>
 
-                <div className={`text-[10px] uppercase flex items-center gap-2 ${currentStyle.text} opacity-70`}>
+                <div className="text-[10px] uppercase flex items-center gap-2 text-slate-200 opacity-70">
                     <Activity size={10} />
                     <span>Processing Environment</span>
                 </div>
 
-                {/* Variant Switcher */}
-                <div className="flex gap-1">
-                    {Object.keys(styles).map((v) => (
-                        <button
-                            key={v}
-                            onClick={() => onVariantChange(v)}
-                            className={`w-4 h-4 rounded border ${variant === v ? 'border-white bg-white/20' : 'border-white/10 hover:bg-white/10'} transition-all`}
-                            title={`Switch to ${v} theme`}
-                        />
-                    ))}
-                </div>
+                <div className="w-16"></div>
             </div>
 
             {/* Terminal Content */}
@@ -230,15 +181,12 @@ const RetroTerminal = ({ progress, variant = 'classic', onVariantChange }) => {
                 <div className="max-w-3xl mx-auto space-y-3">
                     {activeSteps.map((step, index) => (
                         <div key={index} className="flex items-start animate-in fade-in slide-in-from-left-2 duration-300">
-                            <span className={`mr-3 opacity-75 shrink-0 ${currentStyle.accent}`}>➜</span>
-                            <span
-                                className={currentStyle.text}
-                                style={{ textShadow: currentStyle.glow }}
-                            >
+                            <span className="mr-3 opacity-75 shrink-0 text-blue-400">➜</span>
+                            <span className="text-slate-200">
                                 {step.text}
                             </span>
                             {index === activeSteps.length - 1 && progress < 100 && (
-                                <span className={`ml-2 inline-block w-2 h-4 ${currentStyle.progressBar} animate-pulse align-middle`}></span>
+                                <span className="ml-2 inline-block w-2 h-4 bg-gradient-to-r from-blue-500 to-violet-500 animate-pulse align-middle"></span>
                             )}
                         </div>
                     ))}
@@ -246,33 +194,20 @@ const RetroTerminal = ({ progress, variant = 'classic', onVariantChange }) => {
             </div>
 
             {/* Footer / Progress */}
-            <div className={`p-4 ${currentStyle.header} border-t border-white/5 shrink-0 z-10`}>
+            <div className="p-4 bg-[#2a2a3c] border-b border-white/5 border-t border-white/5 shrink-0 z-10">
                 <div className="max-w-3xl mx-auto">
                     <div className="flex justify-between text-xs mb-2 opacity-70">
-                        <span className={currentStyle.text}>STATUS: RUNNING</span>
-                        <span className={currentStyle.text}>{Math.round(progress)}%</span>
+                        <span className="text-slate-200">STATUS: RUNNING</span>
+                        <span className="text-slate-200">{Math.round(progress)}%</span>
                     </div>
-                    <div className={`h-1.5 w-full rounded-full overflow-hidden ${currentStyle.progressBg}`}>
+                    <div className="h-1.5 w-full rounded-full overflow-hidden bg-blue-900/30">
                         <div
-                            className={`h-full transition-all duration-300 ${currentStyle.progressBar}`}
+                            className="h-full transition-all duration-300 bg-gradient-to-r from-blue-500 to-violet-500"
                             style={{ width: `${progress}%` }}
-                        >
-                            {variant !== 'modern' && <div className="absolute inset-0 bg-white/20 w-full animate-shimmer"></div>}
-                        </div>
+                        />
                     </div>
                 </div>
             </div>
-
-            {/* Scanline Effect Overlay (Conditional) */}
-            {currentStyle.scanline && (
-                <div
-                    className="absolute inset-0 pointer-events-none opacity-10 z-0"
-                    style={{
-                        background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06))',
-                        backgroundSize: '100% 2px, 3px 100%'
-                    }}
-                ></div>
-            )}
         </div>
     );
 };
@@ -287,7 +222,6 @@ export default function ImageDeblurApp() {
     const [progress, setProgress] = useState(0);
     const [metrics, setMetrics] = useState(null);
     const [activeInfoCard, setActiveInfoCard] = useState('what');
-    const [terminalVariant, setTerminalVariant] = useState('classic');
     const [errorMessage, setErrorMessage] = useState('');
 
     const fileInputRef = useRef(null);
@@ -358,8 +292,13 @@ export default function ImageDeblurApp() {
 
             const base64Image = await base64Promise;
 
-            // Send directly to Azure Function
-            const response = await fetch('https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur', {
+            // Use relative URL - will be proxied to Azure Function via vite proxy in dev
+            // In production (after build), this will call the Azure Function directly
+            const apiUrl = import.meta.env.DEV
+                ? '/api/imagedeblur'
+                : 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur';
+
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -540,11 +479,7 @@ export default function ImageDeblurApp() {
                             {/* STATE: PROCESSING (Terminal) */}
                             {status === 'processing' && (
                                 <DisplayStage>
-                                    <RetroTerminal
-                                        progress={progress}
-                                        variant={terminalVariant}
-                                        onVariantChange={setTerminalVariant}
-                                    />
+                                    <ProcessingTerminal progress={progress} />
                                 </DisplayStage>
                             )}
 

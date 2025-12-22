@@ -9,8 +9,9 @@ export default defineConfig({
         port: 3000,
         proxy: {
             '/api': {
-                target: 'http://localhost:5000',
+                target: 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net',
                 changeOrigin: true,
+                secure: true,
             },
         },
     },
