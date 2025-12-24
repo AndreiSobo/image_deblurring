@@ -1,7 +1,5 @@
 # Image Deblurring Project - Technical Documentation
 
-**Last Updated:** November 11, 2025
-
 ---
 
 ## Table of Contents
@@ -38,10 +36,6 @@ python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 - Training requires GPU (RTX 4070: 12GB VRAM)
 - Inference works on CPU (Azure Functions)
 
-**Performance:**
-- GPU: ~99ms for 2048×2048 image
-- CPU: ~2-5s for same image
-
 ---
 
 ## Model Architecture
@@ -65,7 +59,7 @@ class DeblurUNet(nn.Module):
 | **No final activation** | Allows flexible output range, better gradients, prevents over-smoothing |
 | **GroupNorm (8 groups)** | Stable with small batch sizes (works with batch=8) |
 | **Bilinear upsample + conv** | Avoids checkerboard artifacts from TransposeConv |
-| **Skip connections** | Preserves fine details from encoder |
+| **Skip connections** | Preserves fine details from encoder and helps understand larger patterns|
 
 **Model Stats:**
 - Parameters: 8.6M
@@ -89,7 +83,7 @@ return out
 
 ## Training Pipeline
 
-### Data Loading (GoPro Dataset)
+### Data Loading (GoPro_Large Dataset)
 
 **Optimized Memory Strategy:**
 
@@ -109,7 +103,6 @@ class DeblurDataset:
         return transform(augmented)
 ```
 
-**Memory Savings:** 94% reduction (921,600 → 65,536 pixels per batch item)
 
 **Augmentation:**
 - Horizontal flip (50%)
@@ -132,7 +125,7 @@ for epoch in range(num_epochs):
     # 2. Evaluate
     val_loss, val_psnr, val_ssim = evaluate(model, val_loader)
     
-    # 3. Save best checkpoint
+    # 3. Save best checkpoint based on PSNR value
     if val_psnr > best_psnr:
         save_checkpoint(f'best_model_epoch_{epoch}_psnr_{val_psnr:.2f}.pth')
     
@@ -154,8 +147,8 @@ for epoch in range(num_epochs):
 # Core settings
 batch_size = 24              # Max for 12GB VRAM
 learning_rate = 2e-4         # AdamW sweet spot
-num_epochs = 200             # With early stopping
-patience = 50                # Early stopping threshold
+num_epochs = 500             # With early stopping
+patience = 200                # Early stopping threshold
 
 # Optimization
 optimizer = AdamW(lr=2e-4, weight_decay=1e-4)
@@ -170,14 +163,14 @@ beta = 0.16                  # Charbonnier weight
 ### Rationale
 
 **Batch Size (24):**
-- GPU Memory: ~10.5GB / 12GB used
+- GPU Memory: ~10.5GB / 12GB used. This was an upgrade from the initial 8GB available on my laptop, allowing for larger batch sizes and higher number of epochs
 - MS-SSIM stability: Needs batch_size ≥ 16
 - Trade-off: Larger = more stable, but batch_size=32 causes OOM
 
 **Learning Rate (2e-4):**
 - Too high (1e-3): Unstable, oscillations
-- Too low (1e-5): Slow convergence (200+ epochs)
-- 2e-4: Fast, stable convergence (~50-100 epochs)
+- Too low (1e-5): Slow convergence
+- 2e-4: Fast, stable convergence
 
 **Gradient Clipping (1.0):**
 - **What:** Limits L2 norm of all gradients: `||g|| ≤ max_norm`
@@ -197,7 +190,7 @@ Training continues smoothly
 ```
 
 **CosineAnnealingLR:**
-- Smooth decay: 2e-4 → 1e-6 over 200 epochs
+- Smooth decay: 2e-4 → 1e-6 over 500 epochs
 - No manual tuning needed
 - Better than step decay (no sudden drops)
 
@@ -248,7 +241,7 @@ class CombinedLoss(nn.Module):
 **Why 84% MS-SSIM / 16% Charbonnier?**
 - MS-SSIM: Perceptual quality, structure preservation
 - Charbonnier: Pixel accuracy, stable gradients
-- 84/16 ratio: Empirically best for edge sharpness
+- 84/16 ratio: Similar works had success with that ratio after ablation tests
 
 **Error Handling:**
 - MS-SSIM can fail with small batches or NaN values
@@ -265,10 +258,7 @@ class CombinedLoss(nn.Module):
 
 ### Problem: Training vs Inference Size Mismatch
 
-- **Training:** 256×256 pa
-
-
-tches (memory efficient)
+- **Training:** 256×256 patches (memory efficient)
 - **Inference:** Arbitrary sizes (1920×1080, 2048×2048, etc.)
 
 ### Solution: Sliding Window with Overlap
@@ -310,19 +300,6 @@ def stitch_tiles(tiles, coords, image_shape, overlap=64):
     return output / weight  # Normalize
 ```
 
-**Feathering (Linear Blend):**
-
-```
-Weight map for tile with 64px overlap:
-
-1.0 ┤         ████████████         Center
-0.5 ┤      ██              ██      
-0.0 ┤██                        ██  Edges
-    └──────────────────────────────
-    0    64              448    512
-
-Overlap regions blend linearly between tiles
-```
 
 **Why Overlap?**
 - Prevents visible seams at tile boundaries
@@ -340,13 +317,6 @@ tiles, coords = tile_tensor(large_image, tile_size=512, overlap=64)
 outputs = [model(tile) for tile in tiles]
 result = stitch_tiles(outputs, coords, large_image.shape, overlap=64)
 ```
-
-**Performance:**
-- Tile size: 512×512 (larger than training for efficiency)
-- Overlap: 64px (balance quality vs compute)
-- Device-agnostic: Works on GPU and CPU
-
----
 
 ## Experiment Tracking
 
@@ -462,27 +432,12 @@ model.load_state_dict(checkpoint['model_state_dict'])
 
 | Metric | Value |
 |--------|-------|
-| **Best PSNR** | 26.80 dB (epoch 53) |
-| **Best SSIM** | 0.77 |
-| **Training Time** | 2-8 hours (RTX 4070) |
-| **Convergence** | 50-100 epochs |
-| **Total Runs** | 50+ experiments |
+| **Best PSNR** | 28.88 dB |
+| **Best SSIM** | 0.853 |
+| **Training Time** | ~5 hours (RTX 4070) |
+| **Convergence** | 50-400 epochs |
+| **Total Runs** | 20+ experiments |
 
-### Training Curve (Typical)
-
-```
-PSNR Progress:
-
-27 ┤                      ──────  ← Plateau at 26.8
-26 ┤                 ─────
-25 ┤            ─────
-24 ┤       ─────
-23 ┤  ─────
-22 ┼─
-   0    50   100   150   200 epochs
-   
-   Early stopping triggered at epoch ~80-120
-```
 
 ### Key Lessons
 
@@ -496,7 +451,7 @@ PSNR Progress:
 **What Failed:**
 - ❌ Charbonnier-only loss (poor edges)
 - ❌ No gradient clipping (crashes at epoch 27)
-- ❌ Batch size 32 (OOM error)
+- ❌ Large batch size 32 (OOM error)
 - ❌ Learning rate 1e-3 (unstable)
 - ❌ No MS-SSIM error handling (training crashes)
 
@@ -546,8 +501,6 @@ def run_inference(img_tensor, model):
 - Different PyTorch builds required for each environment
 
 ### Azure Functions Deployment
-
-**Successful Deployment - November 17, 2025**
 
 The Azure Function was successfully deployed using Azure Functions Core Tools. The deployment process required specific configuration and dependency management to work within Azure's resource constraints.
 
@@ -632,7 +585,7 @@ Solution: Use --extra-index-url instead to search both PyPI and PyTorch repos
 The model trained with PyTorch 2.9.0 (CUDA) was successfully deployed and runs on PyTorch 2.4.1 (CPU). PyTorch maintains backward compatibility for model state dicts across minor versions within the same major version (2.x).
 
 **Performance:**
-- CPU inference: ~2-5 seconds for 2048×2048 images
+- CPU inference: ~12 - ~250 seconds depending on image size
 - Sufficient for Azure Functions use case
 - No accuracy degradation observed
 
@@ -666,13 +619,9 @@ curl https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/t
 - Function runtime: v4
 - Region: North Europe
 
-**Updated November 17, 2025**
-
 ---
 
 ## Development Workflow & Deployment
-
-**Date:** December 22, 2025
 
 ### Architecture Overview
 
@@ -686,7 +635,7 @@ Azure Function (Python/PyTorch)
 https://black-forest-0e6a17503.3.azurestaticapps.net → https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net
 ```
 
-**Local Development (Recommended):**
+**Local Development :**
 ```
 React App (Vite Dev Server)
     ↓ HTTPS
@@ -720,18 +669,8 @@ image_deblurring/
 
 ### Why Local-First Development?
 
-**Current Approach (Deploy Every Change via CI/CD):**
-- ❌ Slow feedback loop: 1-3 minutes per change
-- ❌ Wastes resources: GitHub Actions minutes, Azure deployments
-- ❌ Production breakage: Work-in-progress code goes live
-- ❌ Poor testing: Can't experiment freely
+Local-first allows to see changes on the webpage when they occur - the localhost3000 page shows the changes, or errors if any. This allows to push to production with CI/CD only when the feature is correctly implemented and works as intended.
 
-**Local-First Approach (Recommended):**
-- ✅ Instant feedback: <1 second with hot module replacement (HMR)
-- ✅ Safe experimentation: Test freely without affecting production
-- ✅ Better quality: Deploy only tested, complete features
-- ✅ Cost effective: Fewer CI/CD runs
-- ✅ Cleaner Git history: Meaningful commits
 
 ### Recommended Workflow
 
@@ -778,7 +717,7 @@ export default defineConfig({
 
 #### `client/public/staticwebapp.config.json`
 
-**✅ CORRECT LOCATION** - This is the only copy you need!
+
 
 ```json
 {
@@ -801,13 +740,6 @@ export default defineConfig({
 **Why `/api/*` exclusion is critical:**
 - Without it: `/api/imagedeblur` → rewritten to `/index.html` → returns HTML instead of JSON
 - With it: `/api/imagedeblur` → passes through to Azure Function (correct behavior)
-
-**File Organization (December 2025 Cleanup):**
-- ❌ Removed: Root-level `staticwebapp.config.json` (deprecated)
-- ❌ Removed: `client/staticwebapp.config.json` (wrong location)
-- ❌ Removed: `static/` directory (legacy pre-React site)
-- ✅ Keep: `client/public/staticwebapp.config.json` (only correct location)
-- ℹ️ Auto-generated: `client/dist/staticwebapp.config.json` (build artifact, do not edit)
 
 ### GitHub Actions Workflow
 
@@ -884,7 +816,6 @@ npm run dev
 - 🎯 Same behavior as production
 - 🚀 Built-in build optimization
 
-**Important:** The Vite dev server is **NOT** a Node.js backend. It's a development tool that serves your React app locally with hot reload capabilities.
 
 ### Tech Stack
 
@@ -960,11 +891,7 @@ npm run dev
 **Verification:**
 - [x] React app loads
 - [x] API calls work
-- [x] Page refresh doesn't 404
 - [x] No CORS errors
-
-**Updated December 20, 2025**
-
 ---
 
 ## Quick Reference
@@ -1011,21 +938,13 @@ image_deblurring/
     └── doc.md                # This file
 ```
 
-### Key Metrics
-
-| Phase | Metric | Target |
-|-------|--------|--------|
-| **Training** | Train Loss | < 0.10 |
-| **Validation** | PSNR | > 26 dB |
-| **Validation** | SSIM | > 0.75 |
-| **Inference** | Speed (GPU) | < 100ms |
-| **Inference** | Speed (CPU) | < 5s |
-
 ### Inference
 
 Inference is done both locally and via the Azure Function
 - locally, I use the inference_script.py to output images the command for this is using the models saved by MLflow:
 <code>python -m src.inference_script --model_path "/home/andrei/git/image_deblurring/function_app/model/deblurmodelv8.pth" --input_folder ./data/input/ --output_folder ./data/output/ --date "30.11"<code> 
+
+This is cnosidering the machine I was using was running mlflow and had mlflow-based artifacts of models. Alternatively, can simply use torch.load() to get the model - requires the script with the model architecture.
 
 ### Azure Function
 
@@ -1040,7 +959,6 @@ Functions in imageDeblur:
 
 ## Troubleshooting: Static Web App + Azure Functions Integration
 
-**Date:** December 14, 2025
 
 This section documents the challenges encountered when integrating an Azure Static Web App with a separately deployed Azure Function App, and the solutions that resolved them.
 
@@ -1154,7 +1072,7 @@ az functionapp cors add \
 
 **Misconception 1: Routes Configuration Files**
 
-Initially, we modified `static/routes.json` and `staticwebapp.config.json` thinking they controlled the function routing. However, these files only affect routing **within** the Static Web App itself.
+Initially, I modified `static/routes.json` and `staticwebapp.config.json` thinking they controlled the function routing. However, these files only affect routing **within** the Static Web App itself.
 
 **Reality:**
 - `staticwebapp.config.json`: Routes for static files and Static Web App-integrated functions
@@ -1302,12 +1220,12 @@ Always document:
 
 ### Quick Diagnostic Guide
 
-**When you see "405 Method Not Allowed":**
+**When "405 Method Not Allowed":**
 1. ✅ Verify the URL in frontend matches deployed function URL
 2. ✅ Check browser Network tab for actual request URL
 3. ✅ Confirm function accepts the HTTP method (GET/POST/OPTIONS)
 
-**When you see "Failed to fetch" or CORS errors:**
+**When "Failed to fetch" or CORS errors:**
 1. ✅ Check if function and frontend are on different domains
 2. ✅ Verify CORS is enabled in Azure Portal
 3. ✅ Confirm allowed origins include your Static Web App URL
@@ -1352,5 +1270,3 @@ if req.method == "OPTIONS":
 ```
 
 **Result:** ✅ Successfully processes deblurring requests from Static Web App
-
-**Updated December 14, 2025**
