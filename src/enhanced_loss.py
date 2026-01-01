@@ -9,7 +9,7 @@ class CombinedLoss(nn.Module):
         Combines MS-SSIM (structural) with Charbonnier (pixel-wise).
         
         CRITICAL: MS-SSIM requires inputs in [0, data_range].
-        Our images are normalized to [-1, 1], so we shift to [0, 2] for MS-SSIM.
+        current images are normalized to [-1, 1], so we shift to [0, 2] for MS-SSIM.
         """
         super().__init__()
         self.alpha = alpha
@@ -53,7 +53,7 @@ class CombinedLoss(nn.Module):
                 self.failure_count = 0
                 
         except Exception as e:
-            # Fallback to Charbonnier-only if MS-SSIM fails
+            # implement Charbonnier-only if MS-SSIM fails
             self.failure_count += 1
             if self.failure_count <= 3:  # Only log first few failures
                 logging.warning(f"MS-SSIM failed ({self.failure_count}): {e}. Using Charbonnier-only loss.")

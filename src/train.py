@@ -72,7 +72,7 @@ def load_and_verify_best_model(model, checkpoint_path, val_loader, criterion, de
     logging.info(f"Expected performance (Epoch {expected_epoch}): PSNR={expected_psnr:.2f}, SSIM={expected_ssim:.4f}")
     
     # Verify by running evaluation
-    logging.info("Verifying model performance on validation set...")
+    logging.info("Verifying model performance on validation set")
     model.eval()
     val_loss, verified_psnr, verified_ssim = evaluate(model, val_loader, criterion, device)
     

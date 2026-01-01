@@ -298,12 +298,7 @@ def calculate_metrics(output: torch.Tensor, target: torch.Tensor) -> Tuple[float
 
 # Training and evaluation functions
 def train(model, train_loader, criterion, optimizer, device):
-    """
-    Train the model for one epoch.
-    
-    Returns:
-        Average training loss
-    """
+
     model.train()
     running_loss = 0.0
     num_batches = 0
@@ -334,12 +329,7 @@ def train(model, train_loader, criterion, optimizer, device):
 
 
 def evaluate(model, val_loader, criterion, device):
-    """
-    Evaluate the model on validation set.
-    
-    Returns:
-        (avg_loss, avg_psnr, avg_ssim)
-    """
+
     model.eval()
     
     running_loss = 0.0

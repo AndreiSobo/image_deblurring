@@ -11,7 +11,7 @@ class DeblurDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.patch_size = patch_size
-        self.is_training = is_training  # Enable augmentation only for training
+        self.is_training = is_training  # checks if data augmentation is needed for training
         
         # Log the initial directory
         logging.info(f"Initializing GoPro dataset with data directory: {self.data_dir}")
@@ -29,28 +29,28 @@ class DeblurDataset(Dataset):
         logging.info(f"Searching for image pairs in: {self.data_dir}")
         print(f"Searching for image pairs in: {self.data_dir}")
 
-        # GoPro dataset structure: data_dir contains sequence folders (e.g., GOPR0372_07_00)
-        # Each sequence folder contains 'blur' and 'sharp' subdirectories
+        # follows the gopro_large directory structure with
+        # each sequence folder contains 'blur' and 'sharp' subdirectories
         
         if not os.path.exists(self.data_dir):
             logging.error(f"Data directory not found: {self.data_dir}")
             print(f"Data directory not found: {self.data_dir}")
             return image_pairs
         
-        # Get all sequence folders in the data directory
+        # get all sequence folders in the data directory
         sequence_folders = [f for f in os.listdir(self.data_dir) 
                           if os.path.isdir(os.path.join(self.data_dir, f)) and f.startswith('GOPR')]
         
         logging.info(f"Found {len(sequence_folders)} sequence folders")
         print(f"Found {len(sequence_folders)} sequence folders")
         
-        # Iterate through each sequence folder
+        # Iterating through each sequence folder
         for seq_folder in sequence_folders:
             seq_path = os.path.join(self.data_dir, seq_folder)
             blur_dir = os.path.join(seq_path, 'blur')
             sharp_dir = os.path.join(seq_path, 'sharp')
             
-            # Check if both blur and sharp directories exist
+            # Check if both folders exist
             if not os.path.exists(blur_dir) or not os.path.exists(sharp_dir):
                 logging.warning(f"Missing 'blur' or 'sharp' directory in {seq_folder}")
                 print(f"Missing 'blur' or 'sharp' directory in {seq_folder}")
@@ -61,12 +61,12 @@ class DeblurDataset(Dataset):
             logging.info(f"Found {len(blur_files)} blur images in {seq_folder}")
             print(f"Found {len(blur_files)} blur images in {seq_folder}")
             
-            # Match blur and sharp images with the same filename
+            # for each blurred image, use its path to get the sharp path
             for blur_filename in blur_files:
                 blur_path = os.path.join(blur_dir, blur_filename)
                 sharp_path = os.path.join(sharp_dir, blur_filename)
                 
-                # Check if corresponding sharp image exists
+                # Check if corresponding sharp image exists, then add to list of pairs
                 if os.path.exists(sharp_path):
                     image_pairs.append((blur_path, sharp_path))
                 else:
@@ -91,10 +91,9 @@ class DeblurDataset(Dataset):
             raise
         
         # Extract random patches directly in the dataset
-        # This happens BEFORE DataLoader batching, reducing memory by ~94%
         blur_patch, sharp_patch = self._extract_random_patch(blur_img, sharp_img)
         
-        # Apply data augmentation (only during training)
+        # Apply data augmentation if its a training run
         if self.is_training:
             blur_patch, sharp_patch = self._apply_augmentation(blur_patch, sharp_patch)
         
@@ -110,7 +109,7 @@ class DeblurDataset(Dataset):
         bw, bh = blur_img.size
         sw, sh = sharp_img.size
         
-        # Ensure both images have the same size (center crop if needed)
+        # Ensure both images have the same size
         if (bw, bh) != (sw, sh):
             tw, th = min(bw, sw), min(bh, sh)
             blur_img = TF.center_crop(blur_img, (th, tw))   #type:ignore

@@ -8,7 +8,7 @@ from src.utils import infer_large_image
 from src.model_class import DeblurUNet
 
 def main():
-    parser = argparse.ArgumentParser(description="running inference for deblurring")
+    parser = argparse.ArgumentParser(description="running local inference for deblurring")
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--input_folder", type=str, required=True)
     parser.add_argument("--model_name", type=str, default="deblurmodelv8")
