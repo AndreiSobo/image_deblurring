@@ -35,6 +35,7 @@ python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 - CUDA version works on both GPU and CPU (auto-detects)
 - Training requires GPU (RTX 4070: 12GB VRAM)
 - Inference works on CPU (Azure Functions)
+- Model was trained on a Windows machine - environment must reflect that
 
 ---
 
@@ -77,7 +78,7 @@ return out
 
 - **Training:** Unrestricted outputs enable better gradient flow
 - **Inference:** Clamping ensures valid pixel values
-- **Validation:** Outputs naturally stay in [-1.5, 1.5] due to loss function
+- **Validation:** Outputs naturally stay close to [-1, 1] due to loss function (data range = 2)
 
 ---
 
@@ -163,7 +164,7 @@ beta = 0.16                  # Charbonnier weight
 ### Rationale
 
 **Batch Size (24):**
-- GPU Memory: ~10.5GB / 12GB used. This was an upgrade from the initial 8GB available on my laptop, allowing for larger batch sizes and higher number of epochs
+- GPU Memory: 12GB used. This was an upgrade from the initial 8GB available on my laptop, allowing for larger batch sizes and higher number of epochs
 - MS-SSIM stability: Needs batch_size ≥ 16
 - Trade-off: Larger = more stable, but batch_size=32 causes OOM
 
@@ -267,7 +268,7 @@ class CombinedLoss(nn.Module):
 
 ```python
 def tile_tensor(img, tile_size, overlap=64):
-    stride = tile_size - overlap  # 448
+    stride = tile_size - overlap  
     tiles = []
     coords = []
     
@@ -313,7 +314,7 @@ def stitch_tiles(tiles, coords, image_shape, overlap=64):
 patch = dataset[idx]  # 256×256
 
 # Inference: Tiled processing
-tiles, coords = tile_tensor(large_image, tile_size=512, overlap=64)
+tiles, coords = tile_tensor(large_image, tile_size, overlap=64)
 outputs = [model(tile) for tile in tiles]
 result = stitch_tiles(outputs, coords, large_image.shape, overlap=64)
 ```
@@ -384,37 +385,67 @@ def create_model_signature(model, device):
 ### Best-Model-Only Approach
 
 ```python
-best_psnr = 0.0
+def save_best_checkpoint(model, optimizer, epoch, metrics, checkpoint_dir):
+    """Save only the best model checkpoint, replacing previous best."""
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Remove old best checkpoints to keep only the latest best
+    for old_ckpt in checkpoint_dir.glob('best_model_*.pth'):
+        old_ckpt.unlink()
+    
+    # Create new checkpoint
+    checkpoint_path = checkpoint_dir / f"best_model_epoch_{epoch}_psnr_{metrics['psnr']:.2f}.pth"
+    
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': copy.deepcopy(model.state_dict()),
+        'optimizer_state_dict': copy.deepcopy(optimizer.state_dict()),
+        'psnr': metrics['psnr'],
+        'ssim': metrics['ssim'],
+        'train_loss': metrics['train_loss'],
+        'val_loss': metrics['val_loss']
+    }
+    
+    torch.save(checkpoint, checkpoint_path)
+    return checkpoint_path
 
+# Training loop
+best_psnr = 0.0
 for epoch in range(num_epochs):
-    val_psnr = evaluate(model, val_loader)
+    train_loss = train(model, train_loader, criterion, optimizer, device)
+    val_loss, val_psnr, val_ssim = evaluate(model, val_loader, criterion, device)
     
     if val_psnr > best_psnr:
         best_psnr = val_psnr
-        
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
+        metrics = {
             'psnr': val_psnr,
-            'ssim': val_ssim
+            'ssim': val_ssim,
+            'train_loss': train_loss,
+            'val_loss': val_loss
         }
-        
-        path = f'checkpoints/best_model_epoch_{epoch}_psnr_{val_psnr:.2f}.pth'
-        torch.save(checkpoint, path)
+        save_best_checkpoint(model, optimizer, epoch + 1, metrics, checkpoint_dir)
 ```
 
 **Why Best-Only?**
-- Minimal disk usage (~10-20 files vs 200)
-- Automatic selection (highest PSNR in filename)
-- Prevents overfitting (saves peak performance)
+- **Minimal disk usage**: Only 1 checkpoint file at a time (previous best is deleted)
+- **Automatic selection**: Highest PSNR embedded in filename
+- **Prevents overfitting**: Saves peak performance model
+- **Deep copy**: Ensures checkpoint independence from training state
+
+**Checkpoint Contents:**
+- Model state dict (deep copy)
+- Optimizer state dict (deep copy)
+- PSNR and SSIM metrics
+- Training and validation loss
+- Epoch number
 
 **Example Progression:**
 
 ```
-best_model_epoch_1_psnr_22.23.pth
-best_model_epoch_10_psnr_25.79.pth
-best_model_epoch_53_psnr_26.80.pth  ← Final best
+# Only the most recent best checkpoint exists at any time
+best_model_epoch_53_psnr_26.80.pth  ← Current best (older ones deleted)
+best_model_epoch_398_psnr_28.88.pth ← Final best
 ```
 
 **Loading:**
@@ -435,7 +466,7 @@ model.load_state_dict(checkpoint['model_state_dict'])
 | **Best PSNR** | 28.88 dB |
 | **Best SSIM** | 0.853 |
 | **Training Time** | ~5 hours (RTX 4070) |
-| **Convergence** | 50-400 epochs |
+| **Convergence** | 50-500 epochs |
 | **Total Runs** | 20+ experiments |
 
 
