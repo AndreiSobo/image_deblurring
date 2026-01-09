@@ -75,8 +75,22 @@ const ComparisonSlider = ({ beforeImage, afterImage }) => {
         if (isDragging.current) handleMove(e.clientX);
     };
 
-    // Touch support
-    const onTouchMove = (e) => handleMove(e.touches[0].clientX);
+    // Touch support with preventDefault to avoid scrolling conflicts
+    const onTouchStart = (e) => {
+        isDragging.current = true;
+        handleMove(e.touches[0].clientX);
+    };
+
+    const onTouchEnd = () => {
+        isDragging.current = false;
+    };
+
+    const onTouchMove = (e) => {
+        if (isDragging.current) {
+            e.preventDefault(); // Prevent page scrolling while dragging
+            handleMove(e.touches[0].clientX);
+        }
+    };
 
     // Update container width when component mounts or window resizes
     useEffect(() => {
@@ -89,10 +103,12 @@ const ComparisonSlider = ({ beforeImage, afterImage }) => {
         updateWidth();
         window.addEventListener('resize', updateWidth);
         document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('touchend', onTouchEnd);
 
         return () => {
             window.removeEventListener('resize', updateWidth);
             document.removeEventListener('mouseup', onMouseUp);
+            document.removeEventListener('touchend', onTouchEnd);
         };
     }, []);
 
@@ -102,7 +118,9 @@ const ComparisonSlider = ({ beforeImage, afterImage }) => {
             className="relative w-full h-full cursor-ew-resize select-none group"
             onMouseMove={onMouseMove}
             onMouseDown={onMouseDown}
+            onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
         >
             {/* Before Image (Background) */}
             <img
@@ -198,18 +216,73 @@ const ProcessingTerminal = ({ progress }) => {
                 <div className="max-w-3xl mx-auto">
                     <div className="flex justify-between text-xs mb-2 opacity-70">
                         <span className="text-slate-200">STATUS: RUNNING</span>
-                        <span className="text-slate-200">{Math.round(progress)}%</span>
+                        <span className="text-slate-200">{Math.min(Math.round(progress), 100)}%</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full overflow-hidden bg-blue-900/30">
                         <div
                             className="h-full transition-all duration-300 bg-gradient-to-r from-blue-500 to-violet-500"
-                            style={{ width: `${progress}%` }}
+                            style={{ width: `${Math.min(progress, 100)}%` }}
                         />
                     </div>
                 </div>
             </div>
         </div>
     );
+};
+
+// --- Helper Functions ---
+
+const compressImage = (file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Calculate new dimensions
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            const compressedFile = new File([blob], file.name, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now(),
+                            });
+                            resolve(compressedFile);
+                        } else {
+                            reject(new Error('Canvas to Blob conversion failed'));
+                        }
+                    },
+                    'image/jpeg',
+                    quality
+                );
+            };
+            img.onerror = reject;
+        };
+        reader.onerror = reject;
+    });
 };
 
 // --- Main App Component ---
@@ -230,7 +303,7 @@ export default function ImageDeblurApp() {
         setActiveInfoCard(activeInfoCard === id ? null : id);
     };
 
-    const handleFileSelect = (selectedFile) => {
+    const handleFileSelect = async (selectedFile) => {
         if (!selectedFile) return;
 
         if (!selectedFile.type.startsWith('image/')) {
@@ -243,16 +316,26 @@ export default function ImageDeblurApp() {
             return;
         }
 
+        // Compress image if it's too large (especially for mobile photos)
+        let processedFile = selectedFile;
+        if (selectedFile.size > 2 * 1024 * 1024) { // If larger than 2MB
+            try {
+                processedFile = await compressImage(selectedFile);
+            } catch (err) {
+                console.warn('Image compression failed, using original:', err);
+            }
+        }
+
         const reader = new FileReader();
         reader.onload = (e) => {
-            setFile(selectedFile);
+            setFile(processedFile);
             setImagePreview(e.target.result);
             setProcessedImage(null);
             setStatus('idle');
             setProgress(0);
             setErrorMessage('');
         };
-        reader.readAsDataURL(selectedFile);
+        reader.readAsDataURL(processedFile);
     };
 
     const handleDrop = (e) => {
@@ -292,11 +375,17 @@ export default function ImageDeblurApp() {
 
             const base64Image = await base64Promise;
 
-            // Use relative URL - will be proxied to Azure Function via vite proxy in dev
-            // In production (after build), this will call the Azure Function directly
-            const apiUrl = import.meta.env.DEV
-                ? '/api/imagedeblur'
-                : 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imagedeblur';
+            // Log request details for debugging
+            console.log('Sending image to API:', {
+                imageSize: `${(base64Image.length / 1024).toFixed(2)} KB`,
+                fileType: file.type,
+                fileName: file.name,
+                userAgent: navigator.userAgent.substring(0, 50)
+            });
+
+            // Use relative URL - will work both in dev (via proxy) and production (Azure Static Web App routing)
+            // This ensures consistent behavior across desktop and mobile
+            const apiUrl = '/api/imagedeblur';
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -315,7 +404,9 @@ export default function ImageDeblurApp() {
             const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
 
             clearInterval(interval);
-            setProgress(100);
+
+            // Set all states first, then set progress to 100% last
+            // This ensures progress reaches 100% only when everything is ready to display
             setProcessedImage(data.deblurred_image);
             setMetrics({
                 time: `${processingTime}s`,
@@ -323,11 +414,27 @@ export default function ImageDeblurApp() {
             });
             setStatus('success');
 
+            // Small delay to ensure state updates are processed before showing 100%
+            setTimeout(() => {
+                setProgress(100);
+            }, 100);
+
         } catch (error) {
             console.error('Error processing image:', error);
             clearInterval(interval);
             setStatus('error');
-            setErrorMessage(error.message || 'Something went wrong. Please try a smaller image.');
+
+            // More descriptive error messages for mobile debugging
+            let userMessage = 'Something went wrong. Please try again.';
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                userMessage = 'Network error. Please check your internet connection and try again.';
+            } else if (error.message.includes('timeout')) {
+                userMessage = 'Request timed out. Please try a smaller image.';
+            } else if (error.message) {
+                userMessage = error.message;
+            }
+
+            setErrorMessage(userMessage);
         }
     };
 

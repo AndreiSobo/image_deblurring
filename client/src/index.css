@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Improve mobile touch handling */
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+}
+
 /* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
     width: 8px;

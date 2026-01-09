@@ -87,16 +87,20 @@ def load_model():
 @bp.route(route="imageDeblur", methods=["GET", "POST", "OPTIONS"], auth_level=func.AuthLevel.ANONYMOUS)
 def imageDeblur(req: func.HttpRequest) -> func.HttpResponse:
     """Deblurring function using the attached PyTorch model"""
-    logger.info("imageDeblur function processed a request")
+    
+    # Log request details for debugging mobile issues
+    user_agent = req.headers.get('User-Agent', 'Unknown')
+    logger.info(f"imageDeblur request - Method: {req.method}, User-Agent: {user_agent[:100]}")
     
     # Load heavy dependencies on first request
     _lazy_imports()
 
-    # CORS headers
+    # CORS headers - Allow all origins and common mobile browser headers
     headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With"
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With,Accept,Origin",
+        "Access-Control-Max-Age": "86400"  # Cache preflight for 24 hours
     }
 
     if req.method == "OPTIONS":
