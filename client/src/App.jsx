@@ -396,8 +396,17 @@ export default function ImageDeblurApp() {
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Processing failed');
+                let errorMessage = `Server error: ${response.status}`;
+                try {
+                    const error = await response.json();
+                    errorMessage = error.error || error.message || errorMessage;
+                } catch (jsonError) {
+                    // If response is not JSON (HTML error page, empty response, etc.)
+                    const text = await response.text();
+                    console.error('Non-JSON error response:', text.substring(0, 200));
+                    errorMessage = `Server error (${response.status}): ${text.substring(0, 100)}`;
+                }
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();

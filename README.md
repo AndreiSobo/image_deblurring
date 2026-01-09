@@ -68,12 +68,99 @@ cd client && npm run dev
 
 ### Local Azure Function Development (Optional)
 
-To test with a local backend (requires Azure Functions Core Tools):
+To test with a local backend instead of the production Azure Function:
+
+#### Step 1: Install Azure Functions Core Tools
+
+**Linux/WSL:**
+```bash
+# Install Azure Functions Core Tools v4
+curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
+sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list'
+sudo apt-get update
+sudo apt-get install azure-functions-core-tools-4
+```
+
+**macOS:**
+```bash
+brew tap azure/functions
+brew install azure-functions-core-tools@4
+```
+
+**Windows:**
+```bash
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+```
+
+#### Step 2: Set Up Python Environment
 
 ```bash
-cd function_app && func start
-# Then update API endpoint in client/src/App.jsx to http://localhost:7071
+# Navigate to function_app directory
+cd function_app
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate  # Linux/Mac
+# or
+.\venv\Scripts\activate   # Windows
+
+# Install dependencies
+pip install -r requirements.txt
 ```
+
+#### Step 3: Start Local Azure Function
+
+```bash
+# Make sure you're in function_app/ with venv activated
+func start
+
+# Function will start on http://localhost:7071
+# Endpoint: http://localhost:7071/api/imagedeblur
+```
+
+#### Step 4: Update Frontend to Use Local API
+
+In `client/src/App.jsx`, change line ~388:
+
+```javascript
+// Change this:
+const apiUrl = '/api/imagedeblur';
+
+// To this for local development:
+const apiUrl = 'http://localhost:7071/api/imagedeblur';
+```
+
+#### Step 5: Start Frontend
+
+```bash
+# In a NEW terminal window
+cd client
+npm run dev
+
+# Opens at http://localhost:3000
+```
+
+Now both frontend and backend run locally! The frontend will call your local Azure Function.
+
+### Troubleshooting Local Development
+
+**Issue: "Unexpected end of JSON input"**
+- Backend might not be running or returning HTML error page
+- Check Azure Function logs in terminal
+- Verify endpoint URL is correct
+- Check browser console for actual error response
+
+**Issue: CORS errors**
+- Make sure CORS headers are set in `function_app/deblur_func/__init__.py`
+- Or use the Vite proxy (change back to relative `/api/imagedeblur` URL)
+
+**Issue: Model not loading**
+- Ensure `function_app/model/deblurmodelv8.pth` exists
+- Check file path in `function_app/deblur_func/__init__.py` line 72
+
 
 ## 📁 Project Structure
 
