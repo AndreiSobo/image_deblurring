@@ -1,4 +1,17 @@
 {
+    "routes": [
+        {
+            "route": "/api/*",
+            "allowedRoles": [
+                "anonymous"
+            ],
+            "methods": [
+                "GET",
+                "POST",
+                "OPTIONS"
+            ]
+        }
+    ],
     "navigationFallback": {
         "rewrite": "/index.html",
         "exclude": [
