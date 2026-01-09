@@ -385,7 +385,7 @@ export default function ImageDeblurApp() {
 
             // Use relative URL - will work both in dev (via proxy) and production (Azure Static Web App routing)
             // This ensures consistent behavior across desktop and mobile
-            const apiUrl = '/api/imagedeblur';
+            const apiUrl = '/api/imageDeblur';
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
