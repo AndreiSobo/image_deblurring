@@ -383,9 +383,10 @@ export default function ImageDeblurApp() {
                 userAgent: navigator.userAgent.substring(0, 50)
             });
 
-            // Use relative URL - will work both in dev (via proxy) and production (Azure Static Web App routing)
-            // This ensures consistent behavior across desktop and mobile
-            const apiUrl = '/api/imageDeblur';
+            // Call Azure Function directly since it's deployed separately
+            const apiUrl = import.meta.env.DEV
+                ? '/api/imageDeblur'  // Dev: use Vite proxy
+                : 'https://imagedeblur-baajcphucvd2ddha.northeurope-01.azurewebsites.net/api/imageDeblur';  // Prod: direct call
 
             const response = await fetch(apiUrl, {
                 method: 'POST',
